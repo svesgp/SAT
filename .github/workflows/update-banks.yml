@@ -1,0 +1,49 @@
+# Daily crawl of open-source question banks listed in data/sources.yml.
+# scripts/ingest.py fetches each source, enforces the permissive-license allowlist,
+# validates every item and rewrites data/modules/extra.js. Committing the change
+# pushes to main, which triggers the Pages deploy workflow automatically.
+# Run manually: repo → Actions → "Update open-source question banks" → Run workflow.
+
+name: Update open-source question banks
+
+on:
+  schedule:
+    - cron: "0 4 * * *"     # daily 04:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bank-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Self-test the ingester
+        run: python scripts/ingest.py --selftest
+
+      - name: Ingest sources (license-checked)
+        run: python scripts/ingest.py --write
+
+      - name: Commit updated banks (republishes the site automatically)
+        run: |
+          git config user.name "bank-ingest-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data)" ]; then
+            git add data
+            git commit -m "question banks: open-source ingest $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          else
+            echo "No changes — nothing to commit."
+          fi

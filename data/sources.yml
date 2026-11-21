@@ -1,0 +1,50 @@
+# ============================================================================
+# Open-source question-bank sources — read by scripts/ingest.py (the "crawler").
+#
+# The crawler runs daily via .github/workflows/update-banks.yml (and on demand:
+# repo → Actions → "Update open-source question banks" → Run workflow). For every
+# source it: fetches the URL → checks the license against the permissive allowlist
+# → validates each item (4 choices, answer in range, explanation present, known
+# domain) → dedupes → writes data/modules/extra.js, which the site merges into the
+# target module's question pool automatically.
+#
+# LICENSE POLICY (enforced, never guessed): only these licenses are accepted —
+#   mit, isc, bsd-2-clause, bsd-3-clause, apache-2.0,
+#   cc0-1.0, cc-by-4.0, cc-by-sa-4.0, opl-1.0
+# Anything else — including missing license fields and non-commercial variants
+# (CC-BY-NC-*) — is skipped with a warning in the run log. Always verify the
+# license yourself before enabling a source: you are republishing its content.
+#
+# FORMATS
+#   qa-json     : a JSON array (or {"questions":[...]}) of items shaped like
+#                 {"question": "...", "choices": ["a","b","c","d"],
+#                  "answerIndex": 0,            // or "answer": "A"
+#                  "explanation": "...",        // required — every item teaches
+#                  "domain": "NM",              // must match the module's domain keys
+#                  "tier": "core|advanced|elite"}   // optional, default "advanced"
+#   satbank-json: the platform's native schema {id, d, tier, p, q, ch, a, e}
+#
+# Per-source fields: name, url, license, format, module (target module id),
+# default_domain (used when an item omits one), default_tier, id_prefix,
+# enabled. See docs/ADD-A-MODULE.md for the full guide.
+
+sources:
+  # ---- Example of the exact shape (left disabled — verify the license first!) ----
+  - name: Example open MIT-licensed bank
+    url: https://raw.githubusercontent.com/OWNER/REPO/main/questions.json
+    license: mit
+    format: qa-json
+    module: cam-ol
+    default_domain: NM
+    default_tier: advanced
+    enabled: false
+
+  # Add your verified sources below, then set "enabled: true" on each:
+  #
+  # - name: Cambridge-style maths drills (example)
+  #   url: https://raw.githubusercontent.com/OWNER/REPO/main/olevel-maths.json
+  #   license: cc-by-4.0
+  #   format: qa-json
+  #   module: cam-ol
+  #   default_domain: AG
+  #   enabled: true
