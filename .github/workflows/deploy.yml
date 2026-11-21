@@ -32,14 +32,28 @@ jobs:
         run: |
           mkdir -p _site/assets _site/data
           python3 - <<'PY'
-          import json, os, secrets as pysecrets
+          import json, os, re, secrets as pysecrets
           seal = os.environ.get("SEAL_SECRET") or pysecrets.token_hex(32)
           if not os.environ.get("SEAL_SECRET"):
               print("WARNING: SEAL_SECRET not set — generated an ephemeral one for this build.")
           fb = None
           raw = os.environ.get("FIREBASE_CONFIG_JSON", "").strip()
           if raw:
-              fb = json.loads(raw)   # {apiKey, authDomain, projectId, appId, ...}
+              try:
+                  fb = json.loads(raw)
+              except Exception:
+                  # Accept a pasted JS object literal (const firebaseConfig = {…};)
+                  # with unquoted keys and/or trailing commas — normalize to JSON.
+                  m = re.search(r"\{.*\}", raw, re.S)
+                  t = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', m.group(0) if m else raw)
+                  t = re.sub(r",\s*([}\]])", r"\1", t)
+                  fb = json.loads(t)
+              if not isinstance(fb, dict) or not fb.get("apiKey"):
+                  print("WARNING: FIREBASE_CONFIG_JSON has no apiKey — provider sign-in stays disabled.")
+                  fb = None
+              else:
+                  print("FIREBASE_CONFIG_JSON parsed — provider sign-in enabled ( authDomain:",
+                        fb.get("authDomain", "?"), ")")
           cfg = {
               "adminEmail": os.environ.get("ADMIN_EMAIL") or "",
               "sealSecret": seal,
