@@ -1323,6 +1323,7 @@ const SEAL = (() => {
 /* SEAL-END */
 let state = SEAL.freshState();
 function save(){ SEAL.save(); }
+window.SEALED_STORE = SEAL;               // cross-block access (10_app3 boots it)
 window.APP = { $, $$, esc, state, save };
 
 /* ---------- toast & modal ---------- */
@@ -2173,7 +2174,7 @@ $("#foot-admin").textContent = CFG.adminEmail ? "Admin: " + CFG.adminEmail + " Â
 $("#foot-admin").textContent += "Content auto-refreshed twice daily via GitHub Actions";
 window.providerButtons = providerButtons;
 // Boot the sealed store, then enter the app with the loaded (verified) record.
-SEAL.boot().then(r => {
+window.SEALED_STORE.boot().then(r => {
   if(r.loaded){
     Object.assign(state, r.loaded);           // in-place: every state reference stays valid
     if(r.migrated) save();                    // re-seal migrated legacy data immediately
