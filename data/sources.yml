@@ -34,17 +34,17 @@ sources:
     url: https://raw.githubusercontent.com/OWNER/REPO/main/questions.json
     license: mit
     format: qa-json
-    module: cam-ol
-    default_domain: NM
+    module: sat
+    default_domain: ALG
     default_tier: advanced
     enabled: false
 
   # Add your verified sources below, then set "enabled: true" on each:
   #
-  # - name: Cambridge-style maths drills (example)
-  #   url: https://raw.githubusercontent.com/OWNER/REPO/main/olevel-maths.json
+  # - name: Open SAT maths drills (example)
+  #   url: https://raw.githubusercontent.com/OWNER/REPO/main/sat-maths.json
   #   license: cc-by-4.0
   #   format: qa-json
-  #   module: cam-ol
-  #   default_domain: AG
+  #   module: sat
+  #   default_domain: PSD
   #   enabled: true

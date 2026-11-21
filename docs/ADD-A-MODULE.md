@@ -48,7 +48,7 @@ Then reference it in **one** place — the module list in `index.html`'s `<head>
 <script src="data/modules/my-exam.js"></script>
 ```
 
-(the line goes between `cam-asal.js` and `extra.js`). Commit and push — the deploy workflow republishes, and the exam appears in the **Modules** picker.
+(the line goes between `sat.js` and `extra.js`). Commit and push — the deploy workflow republishes, and the exam appears in the **Modules** picker.
 
 ### Question schema (native)
 
@@ -81,8 +81,8 @@ A module may have several sections (like the SAT's Reading & Writing + Math): li
     url: https://raw.githubusercontent.com/OWNER/REPO/main/questions.json
     license: cc-by-4.0          # must be in the allowlist — see the file header
     format: qa-json
-    module: cam-ol              # target module id
-    default_domain: NM          # used when an item has no domain
+    module: sat                # target module id
+    default_domain: ALG        # used when an item has no domain
     default_tier: advanced
     enabled: true
 ```

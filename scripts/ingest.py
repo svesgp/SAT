@@ -225,41 +225,37 @@ def run(write=False, sources_path=SOURCES, out_js=OUT_JS, out_log=OUT_LOG):
 
 def selftest():
     ok = True
-    valid = {"NM", "AG", "GM", "SP"}
+    valid = {"ALG", "ADV", "PSD", "GEO"}
     good = {"question": "2+2?", "choices": ["3", "4", "5", "6"], "answerIndex": 1,
-            "explanation": "2+2=4", "domain": "NM", "tier": "core"}
-    q, why = norm_item({}, good, 0, "cam-ol", "", "advanced", valid)
-    assert q and q["a"] == 1 and q["tier"] == "core" and q["id"].startswith("cam-ol"), "good item normalized"
+            "explanation": "2+2=4", "domain": "ALG", "tier": "core"}
+    q, why = norm_item({}, good, 0, "sat", "", "advanced", valid)
+    assert q and q["a"] == 1 and q["tier"] == "core" and q["id"].startswith("sat"), "good item normalized"
     bad_cases = [
-        ({"question": "x", "choices": ["a", "b", "c"], "answerIndex": 0, "explanation": "e", "domain": "NM"}, "3 choices"),
-        ({"question": "x", "choices": ["a", "b", "c", "a"], "answerIndex": 0, "explanation": "e", "domain": "NM"}, "dup choices"),
-        ({"question": "x", "choices": ["a", "b", "c", "d"], "answerIndex": 4, "explanation": "e", "domain": "NM"}, "range"),
-        ({"question": "x", "choices": ["a", "b", "c", "d"], "answerIndex": 0, "explanation": "", "domain": "NM"}, "no explanation"),
+        ({"question": "x", "choices": ["a", "b", "c"], "answerIndex": 0, "explanation": "e", "domain": "ALG"}, "3 choices"),
+        ({"question": "x", "choices": ["a", "b", "c", "a"], "answerIndex": 0, "explanation": "e", "domain": "ALG"}, "dup choices"),
+        ({"question": "x", "choices": ["a", "b", "c", "d"], "answerIndex": 4, "explanation": "e", "domain": "ALG"}, "range"),
+        ({"question": "x", "choices": ["a", "b", "c", "d"], "answerIndex": 0, "explanation": "", "domain": "ALG"}, "no explanation"),
         ({"question": "x", "choices": ["a", "b", "c", "d"], "answerIndex": 0, "explanation": "e", "domain": "ZZ"}, "bad domain"),
-        ({"choices": ["a", "b", "c", "d"], "answerIndex": 0, "explanation": "e", "domain": "NM"}, "no stem"),
+        ({"choices": ["a", "b", "c", "d"], "answerIndex": 0, "explanation": "e", "domain": "ALG"}, "no stem"),
     ]
     for item, why_expect in bad_cases:
-        q2, why2 = norm_item({}, item, 1, "cam-ol", "", "advanced", valid)
+        q2, why2 = norm_item({}, item, 1, "sat", "", "advanced", valid)
         assert q2 is None and why2, f"should reject: {why_expect}"
     # letter answer
-    q3, _ = norm_item({}, {**good, "answerIndex": None, "answer": "C"}, 2, "cam-ol", "", "", valid)
+    q3, _ = norm_item({}, {**good, "answerIndex": None, "answer": "C"}, 2, "sat", "", "", valid)
     assert q3 and q3["a"] == 2, "letter answer 'C' → index 2"
     # default domain + tier fallback
-    q4, _ = norm_item({}, {**good, "domain": None, "tier": "bogus"}, 3, "cam-ol", "GM", "", valid)
-    assert q4 and q4["d"] == "GM" and q4["tier"] == "advanced", "defaults applied"
+    q4, _ = norm_item({}, {**good, "domain": None, "tier": "bogus"}, 3, "sat", "PSD", "", valid)
+    assert q4 and q4["d"] == "PSD" and q4["tier"] == "advanced", "defaults applied"
     # license gate
     assert "mit" in PERMISSIVE and "cc-by-nc-4.0" not in PERMISSIVE, "allowlist shape"
     # yaml-subset parser
-    sample = "# comment\nsources:\n  - name: Demo bank\n    url: https://x/y.json\n    license: mit\n    module: cam-ol\n    default_domain: NM\n    enabled: false\n"
+    sample = "# comment\nsources:\n  - name: Demo bank\n    url: https://x/y.json\n    license: mit\n    module: sat\n    default_domain: ALG\n    enabled: false\n"
     tmp = "/tmp/ingest_selftest.yml"
     open(tmp, "w").write(sample)
     srcs = load_sources(tmp)
     assert len(srcs) == 1 and srcs[0]["name"] == "Demo bank" and srcs[0]["enabled"] is False, "parser"
-    # domain extraction from the real module files
-    doms_ol = extract_domains(os.path.join(ROOT, "data", "modules", "cam-ol.js"))
-    assert {"NM", "AG", "GM", "SP"} <= doms_ol, f"cam-ol domains extracted: {doms_ol}"
-    doms_asal = extract_domains(os.path.join(ROOT, "data", "modules", "cam-asal.js"))
-    assert {"PM", "ME", "PS"} <= doms_asal, f"cam-asal domains extracted: {doms_asal}"
+    # domain extraction from the real module file
     doms_sat = extract_domains(os.path.join(ROOT, "data", "modules", "sat.js"))
     assert {"CS", "II", "SEC", "EOI", "ALG", "ADV", "PSD", "GEO"} <= doms_sat, f"sat domains extracted: {doms_sat}"
     print("ingest.py selftest: ALL PASSED (normalization, license gate, parser, domain extraction)")

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SAT Ascent — Free Adaptive Exam Practice (Digital SAT · Cambridge)</title>
-<meta name="description" content="Free multi-exam practice platform: module-adaptive Digital SAT tests, Cambridge O Level and AS & A Level starters, passwordless sign-in, sealed progress and a free AI tutor.">
+<title>SAT Ascent — Free Adaptive Practice for the Digital SAT</title>
+<meta name="description" content="Free Digital SAT practice: module-adaptive tests, topic lessons, honest score estimates, passwordless sign-in, sealed progress and a free AI tutor.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M14 46 L28 22 L37 36 L44 27 L52 46 Z' fill='white' opacity='.92'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -212,8 +212,6 @@ footer .row{gap:8px}
      open-source banks. See docs/ADD-A-MODULE.md — adding an exam never touches this file. -->
 <script src="data/modules/index.js"></script>
 <script src="data/modules/sat.js"></script>
-<script src="data/modules/cam-ol.js"></script>
-<script src="data/modules/cam-asal.js"></script>
 <script src="data/modules/extra.js"></script>
 
 </head>
@@ -226,10 +224,10 @@ footer .row{gap:8px}
         <span class="chip warn">🎯 Elite tier: 700+ difficulty focus</span>
         <span class="chip good">No passwords, ever</span>
         <span class="chip">🤖 Free AI tutor built in</span>
-        <span class="chip">🎓 SAT · Cambridge &amp; more</span>
+        <span class="chip">🎓 Built for the Digital SAT</span>
       </div>
-      <h1>Score higher with free, adaptive practice — <span class="grad">Digital SAT</span> and beyond.</h1>
-      <p class="sub">Module-adaptive tests, topic-wise lessons, a personalized tip engine and a free AI tutor. One practice platform built for many exams: Digital SAT today, with Cambridge O&nbsp;Level and AS &amp; A&nbsp;Level modules ready to grow — choose your exam after signing in.</p>
+      <h1>Score higher on the <span class="grad">Digital SAT</span> with free, adaptive practice.</h1>
+      <p class="sub">Module-adaptive tests, topic-wise lessons, a personalized tip engine and a free AI tutor — everything calibrated to the Digital SAT, free for everyone. Sign in and start with a 30-minute diagnostic.</p>
       <div class="authbox card" id="authbox">
         <h3 style="margin-bottom:4px">Create your free account</h3>
         <p class="small muted" style="margin-bottom:14px">Sign in with a provider you already trust. We never store passwords.</p>
@@ -245,7 +243,7 @@ footer .row{gap:8px}
       <span class="chip">♾️ Unlimited full &amp; topic tests</span>
       <span class="chip">📈 Score estimates + pacing analysis</span>
       <span class="chip">🧠 Tips tuned to <i>your</i> errors</span>
-      <span class="chip">🎓 Multiple exam modules</span>
+      <span class="chip">🛡️ Sealed, tamper-proof progress</span>
     </div>
     </div>
     <div class="feats grid g3">
@@ -311,13 +309,9 @@ footer .row{gap:8px}
   <!-- ================= MODULE PICKER ================= -->
   <section id="view-modules" class="view">
     <div class="shell">
-      <h2 class="sec">Choose your exam 🎓</h2>
+      <h2 class="sec">Choose your module 🎓</h2>
       <p class="small muted" style="margin-bottom:16px">Each module is a complete practice world — its own domains, lessons, question banks and tests. Switch any time; progress is kept separately per module.</p>
       <div class="grid g3" id="modgrid"></div>
-      <div class="card plain" style="margin-top:18px">
-        <h3 style="margin-bottom:8px">Adding more exams</h3>
-        <p class="small muted">New exams ship as data files, not code changes — the guide is <code>docs/ADD-A-MODULE.md</code> in the repository. The <code>update-banks</code> GitHub Action can also crawl open-source question banks (with license checks) and fold them into any module automatically — configure it in <code>data/sources.yml</code>.</p>
-      </div>
     </div>
   </section>
 
@@ -1750,12 +1744,12 @@ window.renderSettings = () => {
   $("#set-name").value = state.user.name;
   $("#set-email").innerHTML = `<b>${esc(state.user.email)}</b> · signed in via <b>${state.user.provider==="google"?"Google":state.user.provider==="github"?"GitHub":"this device"}</b> · member since ${esc(state.user.since||"—")}`;
   const admin = CFG.adminEmail
-    ? `Admin contact: <b>${esc(CFG.adminEmail)}</b>`
-    : `Admin contact: set the <code>ADMIN_EMAIL</code> repository secret (owner one-time setup — see <code>docs/OPERATIONS.md</code>).`;
+    ? `<p class="small muted" style="margin-bottom:8px">Questions about the site? Contact <b>${esc(CFG.adminEmail)}</b>.</p>`
+    : "";
   $("#about-txt").innerHTML = `
-    <p class="small muted" style="margin-bottom:8px"><b>SAT Ascent</b> — a multi-exam practice platform: module-adaptive Digital SAT tests, Cambridge O Level and AS &amp; A Level starter modules, topic lessons, a personalized tip engine, a free AI tutor and a twice-daily auto-updating content feed. New exams are added as data modules — no code changes needed.</p>
+    <p class="small muted" style="margin-bottom:8px"><b>SAT Ascent</b> — a free Digital SAT practice platform: module-adaptive tests, topic lessons, a personalized tip engine, a free AI tutor and an auto-updating feed of official SAT news.</p>
     <p class="small muted" style="margin-bottom:8px">The <b>AI tutor</b> is free and needs no account — it uses the Pollinations.ai community API. Only the text you type (or the question you attach) is sent; never your record, email or progress.</p>
-    <p class="small muted" style="margin-bottom:8px">${admin}</p>
+    ${admin}
     <p class="small muted">No passwords exist anywhere in this system. Provider sign-in is delegated to Google/GitHub via Firebase OAuth; the device-account mode stores only a name and email locally. Your progress record is encrypted and integrity-sealed (AES-256-GCM + HMAC) — only this app can read it, any manual tampering or rollback is detected and rejected, and signing out parks your record safely under your account for next time.</p>`;
 };
 $("#btn-save-name").onclick = () => {
