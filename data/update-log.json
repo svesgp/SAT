@@ -1,0 +1,29 @@
+{
+  "updated": "seeded — first watcher run will refresh this",
+  "entries": [
+    {
+      "date": "2026-11-21",
+      "source": "College Board Blog",
+      "kind": "official",
+      "title": "Your Counselor’s Role when Applying to College",
+      "url": "https://blog.collegeboard.org/your-counselors-role-when-applying-college",
+      "summary": "Official College Board blog post — tracked automatically by the twice-daily watcher."
+    },
+    {
+      "date": "2026-11-21",
+      "source": "College Board Blog",
+      "kind": "official",
+      "title": "Pre-AP Learning Checkpoints",
+      "url": "https://blog.collegeboard.org/pre-ap-learning-checkpoints",
+      "summary": "Official College Board blog post — tracked automatically by the twice-daily watcher."
+    },
+    {
+      "date": "2026-11-21",
+      "source": "College Board Blog",
+      "kind": "official",
+      "title": "What Careers Let You Work from Home? 6 Remote-Friendly Career Paths",
+      "url": "https://blog.collegeboard.org/what-careers-let-you-work-home-6-remote-friendly-career-paths",
+      "summary": "Official College Board blog post — tracked automatically by the twice-daily watcher."
+    }
+  ]
+}

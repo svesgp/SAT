@@ -1,0 +1,57 @@
+# SAT Ascent — twice-daily content refresh + change report
+# Runs the watcher at 06:00 and 18:00 UTC, commits any new items to data/,
+# which automatically updates the live site (GitHub Pages serves from main).
+# You can also trigger it manually: repo → Actions → "Twice-daily refresh" → Run workflow.
+
+name: Twice-daily refresh
+
+on:
+  schedule:
+    - cron: "0 6 * * *"    # 06:00 UTC — morning run
+    - cron: "0 18 * * *"   # 18:00 UTC — evening run
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sat-refresh
+  cancel-in-progress: false
+
+jobs:
+  scrape-and-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run watcher (fetch, dedupe, log, report, email)
+        env:
+          # Optional — add these repo secrets to get the change report by email:
+          #   Settings → Secrets and variables → Actions → New repository secret
+          # For Gmail: SMTP_USER = your Gmail address, SMTP_PASS = an App Password
+          # (myaccount.google.com → Security → 2-Step Verification → App passwords),
+          # SMTP_TO = the admin email that should receive the report.
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_TO: ${{ secrets.SMTP_TO }}
+        run: python scripts/scraper.py
+
+      - name: Commit updated data (this republishes the site automatically)
+        run: |
+          git config user.name "sat-watcher-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data)" ]; then
+            git add data
+            git commit -m "content refresh: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+            git push
+          else
+            echo "No changes — nothing to commit."
+          fi
