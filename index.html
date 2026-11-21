@@ -1449,7 +1449,9 @@ window.buildTips = a => {
 function buildPlan(a){
   const doms = Object.entries(a.perDomain).map(([d,v])=>({d,pct:Math.round(100*v.correct/v.seen),seen:v.seen}))
     .filter(x=>x.seen>=3).sort((x,y)=>x.pct-y.pct).slice(0,2);
-  const chosen = doms.length ? doms : [{d:"CS",pct:null},{d:"ALG",pct:null}];
+  const chosen = doms.length === 1 ? [doms[0], doms[0]]
+               : doms.length ? doms
+               : [{d:"CS",pct:null},{d:"ALG",pct:null}];
   const days = [
     ["Day 1", `Read the full lesson for <b>${domInfo(chosen[0].d).name}</b>, then do a 12-question drill untimed. Read every explanation.`],
     ["Day 2", `Timed 12-question test on <b>${domInfo(chosen[0].d).name}</b>. Target: beat yesterday by 2 questions.`],
@@ -1816,6 +1818,427 @@ window.SEALED_STORE.boot().then(r => {
   }
 });
 })();
+</script>
+<script>
+/* ============ SAT Ascent — exam plan + save center (v1) ============ */
+(function(){
+"use strict";
+if (window.__SATASC_SAVE_V1__) return;
+window.__SATASC_SAVE_V1__ = true;
+
+const $  = s => document.querySelector(s);
+const state = window.APP.state;
+const save  = window.APP.save;
+const esc   = window.APP.esc || (s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])));
+
+/* ---------- secret-bearing config lives OUTSIDE the sealed state so it
+   never appears in exported progress files ---------- */
+const CFGK = "satasc.savecfg";
+const readCfg  = () => { try { return JSON.parse(localStorage.getItem(CFGK) || "{}"); } catch(e){ return {}; } };
+const writeCfg = p  => { const c = readCfg(); Object.assign(c, p); localStorage.setItem(CFGK, JSON.stringify(c)); return c; };
+
+/* ---------- styles ---------- */
+const st = document.createElement("style");
+st.textContent = `
+@keyframes savepulse{0%{box-shadow:0 0 0 0 rgba(251,191,36,.55)}70%{box-shadow:0 0 0 11px rgba(251,191,36,0)}100%{box-shadow:0 0 0 0 rgba(251,191,36,0)}}
+.savebtn{color:#fbbf24;border-color:#6b5413;font-weight:800}
+.savebtn.pulse{animation:savepulse 1.6s infinite}
+.savebtn .lbl{font-size:.78rem;margin-left:4px}
+.examchip{display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:.74rem;font-weight:800;border:1px solid #2b4a80;color:#93c5fd;background:var(--card2);white-space:nowrap}
+.examchip.soon{color:#fbbf24;border-color:#6b5413}
+.examcard h4{margin:2px 0 6px;font-size:1rem}
+.examcard ul{margin:6px 0 10px;padding-left:20px}
+.examcard li{margin:4px 0;font-size:.9rem;color:var(--muted)}
+.saveopt{display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid var(--line);border-radius:12px;margin-top:10px;background:var(--card2)}
+.saveopt .ico{font-size:1.35rem;line-height:1.2}
+.saveopt .bd{flex:1;min-width:0}
+.saveopt h5{margin:0 0 3px;font-size:.95rem}
+.saveopt p{margin:0 0 8px;font-size:.8rem;color:var(--muted)}
+.saveopt .frow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.saveopt .frow input{flex:1;min-width:120px}
+.saveopt input{background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:7px 10px;font-size:.85rem}
+.statusdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-right:6px}
+.statusdot.ok{background:var(--good)}
+@media (max-width:640px){ .savebtn .lbl{display:none} .saveopt{flex-direction:column} }`;
+document.head.appendChild(st);
+
+/* ---------- dirty tracking: every app save() routes through SEAL.save ---------- */
+const SEAL = window.SEALED_STORE;
+let DIRTY = false;
+const _sealSave = SEAL.save.bind(SEAL);
+SEAL.save = function(){ DIRTY = true; syncUI(); return _sealSave(); };
+
+const lastSaved = () => { const c = readCfg(); return (c && c.lastSaved) || null; };
+const needSave  = () => !!state.user && (DIRTY || !lastSaved());
+const markSaved = ch => { DIRTY = false; writeCfg({ lastSaved: { ts: Date.now(), ch } }); syncUI(); };
+
+/* ---------- helpers ---------- */
+const DAYS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const p2 = n => String(n).padStart(2,"0");
+const examDateStr = () => state.settings.examDate || null;
+function daysLeft(){
+  const s = examDateStr(); if(!s) return null;
+  const t = new Date(s + "T00:00:00"); if(isNaN(t)) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.round((t - now) / 86400000);
+}
+const fname = () => { const d = new Date();
+  return "sat-ascent-progress-" + d.getFullYear() + "-" + p2(d.getMonth()+1) + "-" + p2(d.getDate()) + "_" + p2(d.getHours()) + p2(d.getMinutes()) + ".json"; };
+const exportPayload = () => JSON.stringify(Object.assign({}, state,
+  { __app: "SAT Ascent", __exportedAt: new Date().toISOString(), __note: "Backup of your on-device progress. Contains no passwords — sign-ins are handled by the providers." }), null, 2);
+const b64of = str => { const b = new TextEncoder().encode(str); let bin = "";
+  for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(bin); };
+function weakestDomain(){
+  const agg = {};
+  state.progress.attempts.forEach(a => (a.details||[]).forEach(x => {
+    const key = x.d, s = agg[key] = agg[key] || { seen:0, correct:0 };
+    s.seen++; if(x.correct) s.correct++;
+  }));
+  const rows = Object.keys(agg).map(k => ({ d:k, pct: Math.round(100*agg[k].correct/agg[k].seen), seen: agg[k].seen }))
+    .filter(r => r.seen >= 4 && window.DOMAINS && window.DOMAINS[r.d]);
+  rows.sort((a,b) => a.pct - b.pct);
+  return rows[0] || null;
+}
+
+/* ---------- study phases by days remaining ---------- */
+function phaseFor(d){
+  if(d === null) return null;
+  const weak = weakestDomain();
+  const drill = weak ? `Your lowest accuracy right now is <b>${esc(window.DOMAINS[weak.d].name)}</b> (${weak.pct}%). Make it your default drill target.`
+                     : `Take a <b>Quick full test</b> first — it finds your weakest domains and sharpens every recommendation below.`;
+  const drillCTA = weak ? `<button class="btn sm primary" onclick="window.startTopicTest('${weak.d}','all',12)">🧪 Drill ${esc(window.DOMAINS[weak.d].name)} — 12Q</button>
+                         <button class="btn sm" onclick="window.openDomain('${weak.d}')">📖 Review the lesson</button>`
+                        : `<button class="btn sm primary" onclick="window.startTest('quick')">🧪 Take the quick test</button>`;
+  if(d < 0) return { k:"past", title:"🗓️ Your target date has passed", blurb:"Update your exam date to keep this plan accurate — or set a new goal and restart the cycle.",
+    acts:[], cta:`<button class="btn sm primary" onclick="window.showView('settings')">🎯 Set a new date</button>` };
+  if(d === 0) return { k:"today", title:"🍀 It's exam day — good luck!",
+    blurb:"No more studying. Eat, breathe, arrive early with your admission ticket and approved calculator. You've put in the work — go collect the points.",
+    acts:[], cta:"" };
+  if(d <= 7) return { k:"taper", title:"🛌 Taper week — protect the peak", blurb:drill,
+    acts:[ "Light 20–30 minute sessions only — no full tests in the final 48 hours",
+           "Re-scan your formula sheet and grammar rules (Learn tab), nothing new",
+           "Confirm logistics: admission ticket, approved calculator policy, test-center route, ID",
+           "Sleep on schedule for the last 3 nights — it is worth more points than any cramming" ],
+    cta: drillCTA };
+  if(d <= 30) return { k:"peak", title:"🚀 Peak phase — volume with focus", blurb:drill,
+    acts:[ "2 full adaptive tests per week, taken in one sitting under real timing",
+           "Daily 12-question drill on your two weakest domains",
+           "Review every miss in the Review tab — patterns beat raw volume",
+           "Alternate focus days: RW one day, Math the next" ],
+    cta: drillCTA + ` <button class="btn sm" onclick="window.showView('tests')">🏔️ Full-length test</button>` };
+  if(d <= 60) return { k:"condition", title:"⏱️ Test-condition phase — make it feel routine", blurb:drill,
+    acts:[ "1 full-length adaptive test per week, at the same time of day as your real exam",
+           "Hold official pacing: ≈71s per R&W question, ≈95s per Math question",
+           "After each test, work the tips engine's two focus domains",
+           "Keep one light lesson-only day between tests" ],
+    cta: drillCTA + ` <button class="btn sm" onclick="window.showView('tests')">🏔️ Full-length test</button>` };
+  if(d <= 120) return { k:"build", title:"🏗️ Skill-building phase — breadth first", blurb:drill,
+    acts:[ "One full test every 2 weeks is enough — spend the rest on topic drills",
+           "Work through Learn-tab lessons for each domain before drilling it",
+           "2 × 12-question topic drills per week, always timed",
+           "Start a miss notebook: for every wrong answer, write the trap in one line" ],
+    cta: drillCTA };
+  return { k:"foundation", title:"🌱 Foundation phase — build the base", blurb:drill,
+    acts:[ "Cover one domain per week in the Learn tab — all eight by exam-minus-120",
+           "Accuracy first: untimed drills are fine now, speed comes later",
+           "1 quick test every 2 weeks just to track the curve",
+           "Set a weekly rhythm (e.g., Tue/Thu drills, Sat test) and keep it" ],
+    cta: drillCTA };
+}
+
+/* ---------- header controls ---------- */
+const chip = document.createElement("span");
+chip.className = "examchip"; chip.style.display = "none";
+const btn = document.createElement("button");
+btn.className = "iconbtn savebtn"; btn.id = "btn-save";
+btn.innerHTML = "⬇<span class='lbl'>Save</span>";
+const uc = $(".userchip");
+if(uc){ uc.insertBefore(chip, uc.firstChild); uc.insertBefore(btn, uc.firstChild); }
+
+function syncUI(){
+  const signed = !!state.user;
+  btn.style.display = signed ? "" : "none";
+  chip.style.display = signed && daysLeft() !== null ? "" : "none";
+  const d = daysLeft();
+  if(signed && d !== null){
+    chip.textContent = d > 0 ? "🎯 SAT · " + d + "d" : d === 0 ? "🎯 Today" : "🎯 past";
+    chip.classList.toggle("soon", d <= 30);
+  }
+  btn.classList.toggle("pulse", needSave());
+  const t = lastSaved();
+  btn.title = "Save your progress" +
+    (t ? " · last saved " + new Date(t.ts).toLocaleString() + " (" + t.ch + ")" : " · not saved yet") +
+    (d !== null && d >= 0 ? " · exam in " + d + " day" + (d===1?"":"s") : "");
+  document.getElementById("btn-save") && (document.getElementById("btn-save").dataset.need = needSave() ? "1" : "0");
+}
+btn.onclick = () => openSaveCenter();
+
+/* ---------- close-tab guard ---------- */
+window.addEventListener("beforeunload", e => {
+  if(needSave()){ e.preventDefault(); e.returnValue = "Your latest progress has not been saved to a file yet. Use the ⬇ Save button to back it up first."; return e.returnValue; }
+});
+
+/* ---------- dashboard exam card ---------- */
+function ensureExamCard(){
+  const sc = document.getElementById("statcards");
+  if(!sc) return null;
+  let el = document.getElementById("examcard");
+  if(!el){ el = document.createElement("div"); el.id = "examcard"; el.className = "card examcard"; el.style.marginTop = "16px";
+    sc.insertAdjacentElement("afterend", el); }
+  return el;
+}
+function renderExamCard(){
+  const el = ensureExamCard(); if(!el) return;
+  const d = daysLeft(), s = examDateStr();
+  const nice = s ? DAYS[new Date(s+"T00:00:00").getMonth()] + " " + new Date(s+"T00:00:00").getDate() + ", " + new Date(s+"T00:00:00").getFullYear() : "";
+  if(d === null){
+    el.innerHTML = `<div class="spread"><h2 class="sec">🎯 Your exam plan</h2><span class="tiny faint">countdown-driven study plan</span></div>
+      <p class="small muted" style="margin:8px 0 10px">Set your target SAT date and this card turns into a phase-by-phase training plan — what to do this week, and which of <i>your</i> weakest domains to drill, counted down to test day.</p>
+      <button class="btn sm primary" onclick="window.showView('settings')">🎯 Set your exam date</button>`;
+    return;
+  }
+  const ph = phaseFor(d);
+  el.innerHTML = `<div class="spread"><h2 class="sec">🎯 Your exam plan</h2>
+      <span class="tiny faint">${esc(nice)} · <b style="color:var(--warn)">${d>0 ? d + " day" + (d===1?"":"s") + " left" : d===0 ? "today" : "date passed"}</b></span></div>
+    <h4>${ph.title}</h4>
+    <p class="small muted" style="margin:2px 0 6px">${ph.blurb}</p>
+    ${ph.acts.length ? "<ul>" + ph.acts.map(a => "<li>" + a + "</li>").join("") + "</ul>" : ""}
+    <div class="row">${ph.cta} <button class="btn sm ghost" onclick="window.showView('settings')">⚙️ Change date</button></div>`;
+}
+const _rd = window.renderDashboard;
+window.renderDashboard = function(){ const r = _rd.apply(this, arguments); try{ renderExamCard(); }catch(e){ console.error(e); } return r; };
+
+/* ---------- settings: exam date card + save card + disclaimer ---------- */
+function ensureSettingsCards(){
+  const shell = document.querySelector("#view-settings .shell");
+  if(!shell) return;
+  const dataCard = document.getElementById("btn-export").closest(".card");
+  if(!document.getElementById("card-exam")){
+    const c = document.createElement("div"); c.className = "card"; c.id = "card-exam"; c.style.marginTop = "14px";
+    c.innerHTML = `<h3>🎯 Target exam date</h3>
+      <p class="small muted">Your exam plan, countdown and drills all follow this date.</p>
+      <div class="field"><label>Exam date</label><input type="date" id="set-examdate"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm primary" id="btn-examsave">Save date</button>
+        <button class="btn sm ghost" id="btn-examclear">Clear</button>
+      </div>
+      <p class="small muted" id="exam-preview" style="margin-top:8px"></p>`;
+    dataCard.insertAdjacentElement("beforebegin", c);
+    $("#btn-examsave").onclick = () => {
+      const v = $("#set-examdate").value;
+      if(!v){ toast("Pick a date first."); return; }
+      state.settings.examDate = v; save(); syncUI(); fillSettingsExtras();
+      toast("Exam date saved — your 🎯 plan is live on the dashboard.");
+    };
+    $("#btn-examclear").onclick = () => { state.settings.examDate = null; save(); syncUI(); fillSettingsExtras(); toast("Exam date cleared."); };
+  }
+  if(!document.getElementById("card-savecenter")){
+    const c = document.createElement("div"); c.className = "card"; c.id = "card-savecenter"; c.style.marginTop = "14px";
+    c.innerHTML = `<h3>☁️ Backups & save options</h3>
+      <p class="small muted">Progress lives on this device. Keep a copy safe: download a JSON file, save into a folder on this device, your own GitHub repo, or Google Drive.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm primary" id="btn-savecenter">⬇ Open save center</button>
+      </div>
+      <p class="small muted" id="save-status" style="margin-top:8px"></p>`;
+    dataCard.insertAdjacentElement("beforebegin", c);
+    $("#btn-savecenter").onclick = () => openSaveCenter();
+  }
+  const about = document.getElementById("about-txt");
+  if(about && !about.innerHTML.includes("independent practice tool")){
+    about.insertAdjacentHTML("beforeend", `<p class="small muted" style="margin-top:8px">SAT Ascent is an independent practice tool — not affiliated with, sponsored, or endorsed by College Board or Khan Academy. \u201cDigital SAT\u201d is used descriptively; all practice content on this site is original.</p>`);
+  }
+}
+function fillSettingsExtras(){
+  const inp = document.getElementById("set-examdate");
+  if(inp) inp.value = examDateStr() || "";
+  const pv = document.getElementById("exam-preview");
+  if(pv){
+    const d = daysLeft();
+    pv.innerHTML = d === null ? "No date set yet — the plan appears once you pick one."
+      : "<b>" + phaseFor(d).title + "</b> — " + (d > 0 ? d + " day" + (d===1?"":"s") + " to go." : d === 0 ? "today is the day." : "date has passed; update it.");
+  }
+  const ss = document.getElementById("save-status");
+  if(ss){
+    const t = lastSaved();
+    ss.innerHTML = t ? `<span class="statusdot ok"></span>Last backup: <b>${new Date(t.ts).toLocaleString()}</b> via ${esc(t.ch)}.`
+                     : `<span class="statusdot"></span>No backup yet — progress is only on this device until you save a copy.`;
+  }
+}
+const _sv = window.showView;
+window.showView = function(name){ const r = _sv.apply(this, arguments);
+  if(name === "settings"){ try{ ensureSettingsCards(); fillSettingsExtras(); }catch(e){ console.error(e); } }
+  return r; };
+
+/* ---------- save center ---------- */
+function statusHtml(){
+  const t = lastSaved(), d = daysLeft();
+  const dot = t ? `<span class="statusdot ok"></span>backed up ${new Date(t.ts).toLocaleString()} via ${esc(t.ch)}` : `<span class="statusdot"></span>no backup yet`;
+  const exam = d !== null && d >= 0 ? ` · 🎯 exam in <b>${d}</b> day${d===1?"":"s"}` : "";
+  return `${dot}${exam}${needSave() ? " · <b style='color:var(--warn)'>unsaved changes</b>" : ""}`;
+}
+function downloadNow(){
+  const blob = new Blob([exportPayload()], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = fname(); a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  markSaved("download");
+  toast("Progress file downloaded ✓ Keep it somewhere safe (cloud folder, email, USB).");
+}
+async function saveLocalFolder(){
+  if(!window.showDirectoryPicker) throw new Error("This browser can't write to folders directly — use Chrome or Edge on desktop, or the plain download option.");
+  const root = await window.showDirectoryPicker({ id: "satascent", mode: "readwrite", startIn: "documents" });
+  const dir  = await root.getDirectoryHandle("SAT-Ascent", { create: true });
+  const fh   = await dir.getFileHandle(fname(), { create: true });
+  const w    = await fh.createWritable(); await w.write(new Blob([exportPayload()], {type:"application/json"})); await w.close();
+  markSaved("local folder");
+  toast("Saved into the <b>SAT-Ascent</b> folder you chose ✓ (that folder is remembered as your backup spot).");
+}
+async function saveGitHub(){
+  const g = { owner: $("#gh-owner").value.trim(), repo: $("#gh-repo").value.trim(),
+              branch: $("#gh-branch").value.trim(), path: $("#gh-path").value.trim() || "SAT-Ascent",
+              token: $("#gh-token").value.trim() };
+  if(!g.owner || !g.repo){ throw new Error("Fill in your GitHub username and repository name."); }
+  if(!g.token){ throw new Error("Paste a GitHub token with Contents read/write access to this repo."); }
+  const path = g.path.replace(/^\/+|\/+$/g,"") + "/" + fname();
+  const api = "https://api.github.com/repos/" + encodeURIComponent(g.owner) + "/" + encodeURIComponent(g.repo) +
+              "/contents/" + path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(api, { method: "PUT",
+    headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + g.token, "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "SAT Ascent progress backup " + fname(), content: b64of(exportPayload()),
+                           branch: g.branch || undefined }) });
+  if(res.status === 401) throw new Error("GitHub rejected the token (401). Use a fine-grained token with Contents: Read and write on this exact repo.");
+  if(res.status === 404) throw new Error("Repo not found (404) — check the owner/repo spelling.");
+  if(res.status === 422) throw new Error("Branch problem (422) — check the branch name (usually main).");
+  if(!res.ok) throw new Error("GitHub error " + res.status);
+  writeCfg({ gh: { owner: g.owner, repo: g.repo, branch: g.branch, path: g.path, token: g.token } });
+  markSaved("GitHub");
+  toast("Saved to GitHub ✓ Your repo now has the file under <b>" + esc(g.path) + "/</b> — a folder is created automatically by the first upload.");
+}
+let gsiLoading = null;
+function loadGsi(){
+  if(window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+  if(gsiLoading) return gsiLoading;
+  gsiLoading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+    s.onload = () => res(); s.onerror = () => { gsiLoading = null; rej(new Error("Could not load Google sign-in (network blocked?)")); };
+    document.head.appendChild(s);
+  });
+  return gsiLoading;
+}
+async function saveGDrive(){
+  const cid = ($("#gd-client").value || "").trim();
+  if(!cid) throw new Error("A Google OAuth Client ID is needed first (see the note below the field).");
+  await loadGsi();
+  const token = await new Promise((res, rej) => {
+    try {
+      window.google.accounts.oauth2.initTokenClient({
+        client_id: cid, scope: "https://www.googleapis.com/auth/drive.file",
+        callback: r => r && r.access_token ? res(r.access_token) : rej(new Error(r && r.error ? "Google said: " + r.error : "Google sign-in was dismissed.")),
+        error_callback: e => rej(new Error(e && e.message ? e.message : "Google sign-in failed."))
+      }).requestAccessToken({ prompt: "" });
+    } catch(err){ rej(err); }
+  });
+  const H = { Authorization: "Bearer " + token };
+  const q = encodeURIComponent("name='SAT Ascent' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const lr = await fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id,name)", { headers: H }).then(r => r.json());
+  let fid = lr.files && lr.files[0] && lr.files[0].id;
+  if(!fid){
+    const cr = await fetch("https://www.googleapis.com/drive/v3/files", { method:"POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, H),
+      body: JSON.stringify({ name: "SAT Ascent", mimeType: "application/vnd.google-apps.folder" }) }).then(r => r.json());
+    fid = cr.id;
+  }
+  if(!fid) throw new Error("Could not create the Drive folder (check the Client ID and drive.file scope).");
+  const boundary = "satasc" + Date.now();
+  const meta = { name: fname(), parents: [fid], mimeType: "application/json" };
+  const body = new Blob([
+    "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+    "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n",
+    exportPayload(), "\r\n--" + boundary + "--"
+  ], { type: "multipart/related; boundary=" + boundary });
+  const up = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink",
+    { method: "POST", headers: H, body });
+  if(!up.ok) throw new Error("Drive upload failed (" + up.status + ").");
+  writeCfg({ gdriveClientId: cid });
+  markSaved("Google Drive");
+  toast("Saved to Google Drive ✓ File is inside your <b>SAT Ascent</b> Drive folder.");
+}
+function openSaveCenter(){
+  const c = readCfg(), gh = c.gh || {};
+  window.openModal(`
+    <h3 style="margin-bottom:4px">⬇ Save & back up your progress</h3>
+    <p class="small muted" id="sc-status">${statusHtml()}</p>
+    <div class="saveopt"><div class="ico">📁</div><div class="bd">
+      <h5>Download file</h5><p>A JSON copy of everything — works on every device and browser.</p>
+      <button class="btn sm primary" id="sc-download">⬇ Download now</button></div></div>
+    <div class="saveopt"><div class="ico">💾</div><div class="bd">
+      <h5>Save into a folder on this device</h5>
+      <p>Pick a folder once; SAT Ascent creates a <b>SAT-Ascent</b> subfolder and writes timestamped backups. Needs Chrome or Edge on desktop.</p>
+      <button class="btn sm" id="sc-local">💾 Choose folder & save</button></div></div>
+    <div class="saveopt"><div class="ico">⌂</div><div class="bd">
+      <h5>Save to your GitHub repository</h5>
+      <p>Creates <b>path/filename</b> in your own repo (the folder appears with the first upload). Use a
+      <b>fine-grained personal access token</b> limited to this one repo with <b>Contents: Read and write</b>.
+      It is stored only in this browser and sent only to api.github.com.</p>
+      <div class="frow">
+        <input id="gh-owner" placeholder="owner (your username)" value="${esc(gh.owner||"")}">
+        <input id="gh-repo" placeholder="repo name" value="${esc(gh.repo||"")}">
+        <input id="gh-branch" placeholder="branch (main)" value="${esc(gh.branch||"")}" style="max-width:110px">
+        <input id="gh-path" placeholder="folder (SAT-Ascent)" value="${esc(gh.path||"")}" style="max-width:150px">
+      </div>
+      <div class="frow"><input id="gh-token" type="password" placeholder="github token (ghp_… / github_pat_…)" style="flex:2"></div>
+      <button class="btn sm" id="sc-gh">⌂ Save to GitHub</button></div></div>
+    <div class="saveopt"><div class="ico">🅶</div><div class="bd">
+      <h5>Save to Google Drive</h5>
+      <p>Creates a <b>SAT Ascent</b> folder in your Drive and saves the file inside. Requires a Google OAuth <b>Client ID</b> for this site
+      (one-time setup by the site owner: create an OAuth client of type Web with origin <i>https://svesgp.github.io</i>, then paste the ID here).
+      Only the backup file is written — the app never reads anything else.</p>
+      <div class="frow"><input id="gd-client" placeholder="OAuth Client ID (…apps.googleusercontent.com)" value="${esc(c.gdriveClientId||"")}" style="flex:2"></div>
+      <button class="btn sm" id="sc-gd">🅶 Connect & save to Drive</button></div></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="window.closeModal()">Close</button></div>`);
+  $("#sc-status").innerHTML = statusHtml();
+  $("#sc-download").onclick = () => { downloadNow(); $("#sc-status").innerHTML = statusHtml(); };
+  $("#sc-local").onclick = () => saveLocalFolder()
+    .then(() => { $("#sc-status").innerHTML = statusHtml(); })
+    .catch(e => toast(e.name === "AbortError" ? "Folder picker dismissed." : "⚠️ " + esc(e.message)));
+  $("#sc-gh").onclick = () => { $("#sc-gh").textContent = "Saving…";
+    saveGitHub().then(() => { $("#sc-status").innerHTML = statusHtml(); $("#sc-gh").textContent = "⌂ Save to GitHub"; })
+      .catch(e => { toast("⚠️ " + esc(e.message)); $("#sc-gh").textContent = "⌂ Save to GitHub"; }); };
+  $("#sc-gd").onclick = () => { $("#sc-gd").textContent = "Connecting…";
+    saveGDrive().then(() => { $("#sc-status").innerHTML = statusHtml(); $("#sc-gd").textContent = "🅶 Connect & save to Drive"; })
+      .catch(e => { toast("⚠️ " + esc(e.message)); $("#sc-gd").textContent = "🅶 Connect & save to Drive"; }); };
+}
+window.openSaveCenter = openSaveCenter;
+
+/* ---------- post-test reminder ---------- */
+const _rr = window.renderResults;
+window.renderResults = function(){ const r = _rr.apply(this, arguments);
+  try{ const t = lastSaved();
+    if(needSave() && (!t || Date.now() - t.ts > 10*60*1000)){
+      setTimeout(() => {
+        if(!state.user) return;
+        window.openModal(`<h3 style="margin-bottom:6px">💾 Session complete — save a copy?</h3>
+          <p class="small muted">This result is stored on this device, but you haven't backed up recently. Download a file or push it to your folder/repo in two clicks.</p>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="sr-yes">⬇ Save now</button>
+            <button class="btn ghost" onclick="window.closeModal()">Continue without saving</button>
+          </div>`);
+        const y = document.getElementById("sr-yes"); if(y) y.onclick = () => { window.closeModal(); openSaveCenter(); };
+      }, 1800);
+    }
+  }catch(e){ console.error(e); }
+  return r; };
+
+/* ---------- boot ---------- */
+const _ea = window.enterApp;
+window.enterApp = function(){ const r = _ea.apply(this, arguments); syncUI(); return r; };
+syncUI();
+if(state.user && document.getElementById("view-dashboard").classList.contains("on")) renderExamCard();
+setInterval(() => { if(state.user){ syncUI(); if(document.getElementById("examcard")) renderExamCard(); } }, 60000);
+})();
+
 </script>
 </body>
 </html>
