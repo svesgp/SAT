@@ -41,9 +41,9 @@ jobs:
           if raw:
               fb = json.loads(raw)   # {apiKey, authDomain, projectId, appId, ...}
           cfg = {
-              "adminEmail": os.environ.get("ADMIN_EMAIL", ""),
+              "adminEmail": os.environ.get("ADMIN_EMAIL") or "",
               "sealSecret": seal,
-              "sealKeyId": os.environ.get("SEAL_KEY_ID", "d1"),
+              "sealKeyId": os.environ.get("SEAL_KEY_ID") or "d1",
               "firebase": fb,
           }
           js = "/* GENERATED at deploy time from repository secrets — do not edit or commit */\nwindow.APP_CONFIG = " + json.dumps(cfg) + ";\n"
