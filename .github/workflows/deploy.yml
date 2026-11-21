@@ -1,0 +1,71 @@
+name: Deploy site to GitHub Pages
+
+# Builds the site artifact with secrets injected as assets/app-config.js and
+# publishes it. index.html and the public repository never contain API keys.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate assets/app-config.js from repository secrets
+        env:
+          SEAL_SECRET: ${{ secrets.SEAL_SECRET }}
+          SEAL_KEY_ID: ${{ secrets.SEAL_KEY_ID }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
+        run: |
+          mkdir -p _site/assets _site/data
+          python3 - <<'PY'
+          import json, os, secrets as pysecrets
+          seal = os.environ.get("SEAL_SECRET") or pysecrets.token_hex(32)
+          if not os.environ.get("SEAL_SECRET"):
+              print("WARNING: SEAL_SECRET not set — generated an ephemeral one for this build.")
+          fb = None
+          raw = os.environ.get("FIREBASE_CONFIG_JSON", "").strip()
+          if raw:
+              fb = json.loads(raw)   # {apiKey, authDomain, projectId, appId, ...}
+          cfg = {
+              "adminEmail": os.environ.get("ADMIN_EMAIL", ""),
+              "sealSecret": seal,
+              "sealKeyId": os.environ.get("SEAL_KEY_ID", "d1"),
+              "firebase": fb,
+          }
+          js = "/* GENERATED at deploy time from repository secrets — do not edit or commit */\nwindow.APP_CONFIG = " + json.dumps(cfg) + ";\n"
+          with open("_site/assets/app-config.js", "w") as f:
+              f.write(js)
+          print("app-config.js written | firebase:", "yes" if fb else "not configured (on-device accounts only)")
+          PY
+          cp index.html _site/
+          cp assets/app-config.sample.js _site/assets/ 2>/dev/null || true
+          cp -r data/. _site/data/ 2>/dev/null || true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

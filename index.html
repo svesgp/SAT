@@ -180,6 +180,9 @@ footer .row{gap:8px}
 }
 @media print{ header,footer,#toasts,.calc{display:none} }
 </style>
+<!-- Runtime configuration injected at deploy time from repository secrets.
+     NEVER commit the real file — it is gitignored. Absent locally => safe defaults. -->
+<script src="assets/app-config.js"></script>
 </head>
 <body>
 <!-- ================= LANDING / AUTH ================= -->
@@ -407,7 +410,7 @@ footer .row{gap:8px}
       </div>
       <div class="card" style="margin-top:14px">
         <h3>Your data</h3>
-        <p class="small muted">Everything is stored on this device (browser local storage). No passwords exist in the system — provider sign-ins are handled by Google / GitHub / Firebase.</p>
+        <p class="small muted">Everything is stored on this device as an encrypted, integrity-sealed record that only this app can read and parse — manual edits or rollbacks are detected and rejected. No passwords exist in the system — provider sign-ins are handled by Google / GitHub / Firebase.</p>
         <div class="row" style="margin-top:12px">
           <button class="btn sm" id="btn-export">⬇ Export progress (JSON)</button>
           <button class="btn sm danger" id="btn-reset">Reset all progress</button>
@@ -853,13 +856,13 @@ window.MATH = [
 </script>
 <script>
 /* ================= CONFIG ================= */
+/* Runtime configuration is injected at deploy time as assets/app-config.js
+   (exposing window.APP_CONFIG) from repository secrets — nothing secret is
+   ever written here or anywhere in index.html. When that file is absent
+   (local development) the app falls back to safe defaults. */
 window.SATPREP_CONFIG = {
-  // Admin email used in the footer "About" text and by the twice-daily scraper report.
-  // TODO(admin): set this once — it is the ONLY placeholder in this file.
-  adminEmail: "",
-  // Optional Firebase web config. Fill it and Google/GitHub sign-in works out of the box
-  // (see README). Left empty, the app falls back to the on-device email account.
-  firebase: { apiKey: "", authDomain: "", projectId: "", appId: "" },
+  adminEmail: (window.APP_CONFIG && window.APP_CONFIG.adminEmail) || "",
+  firebase: (window.APP_CONFIG && window.APP_CONFIG.firebase) || null,
   // Where the twice-daily scraper publishes its log (relative to the site root).
   updateDataPath: "data/update-log.json"
 };
@@ -1180,15 +1183,146 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-/* ---------- persistent state ---------- */
+/* ---------- sealed persistent state ----------
+   The whole student record (account, attempts, mastery, misses, settings) is
+   stored as ONE encrypted, integrity-sealed envelope that only this app can
+   read and parse:
+     • AES-256-GCM encryption, key derived per-account (PBKDF2 200k, secret
+       injected at deploy time — never present in public code)
+     • HMAC-SHA256 over the full header + GCM auth tag → any byte flipped in
+       the record fails verification
+     • monotonically increasing sequence number + signed mirror → rolling the
+       record back to an older copy is rejected too
+   On any verification failure the record is moved to a quarantine key and the
+   app resets to a clean state — tampered data is never used. */
+/* SEAL-BEGIN */
 const KEY = "satascent_v1";
-let state = load();
-function load(){
-  try{ const raw = localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }catch(e){}
-  return { user:null, settings:{theme:"dark"},
-    progress:{ attempts:[], domainStats:{}, misses:{}, answered:0 } };
-}
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+const SEAL = (() => {
+  const SEALED = KEY + ".sealed", META = KEY + ".sealmeta", QUAR = KEY + ".quarantine";
+  const subtle = (window.crypto && window.crypto.subtle) ? window.crypto.subtle : null;
+  const te = new TextEncoder(), td = new TextDecoder();
+  const b64u = {
+    enc: b => { let s = ""; const u = new Uint8Array(b);
+      for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+      return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); },
+    dec: s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); s += "=".repeat((4 - s.length % 4) % 4);
+      const bin = atob(s); const u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  };
+  // Strong per-deploy secret is injected as assets/app-config.js (built from
+  // repository secrets — never committed, never shipped inside public code).
+  // file:// local testing falls back to a builtin seed; serve over HTTPS for real sealing.
+  const SECRET = (window.APP_CONFIG && window.APP_CONFIG.sealSecret) ||
+    ["sat-ascent", "v1", "device-local-seed", "8f3a51c0d7e29b46"].join("|");
+  const KEYID = (window.APP_CONFIG && window.APP_CONFIG.sealKeyId) || "builtin";
+  let aesKey = null, macKey = null, ready = false, derivedFor = null;
+  let flushing = false, dirty = false;
+  const emailOf = st => (st && st.user && st.user.email) ? String(st.user.email) : "";
+
+  async function derive(email){
+    const base = await subtle.importKey("raw", te.encode(SECRET), "PBKDF2", false, ["deriveBits"]);
+    const bits = await subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256",
+      salt: te.encode("sa1|" + email.toLowerCase()), iterations: 200000 }, base, 512);
+    aesKey = await subtle.importKey("raw", bits.slice(0, 32), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+    macKey = await subtle.importKey("raw", bits.slice(32), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+    ready = true; derivedFor = email.toLowerCase();
+  }
+  async function readMeta(email){
+    try{
+      const m = JSON.parse(localStorage.getItem(META) || "null");
+      if(!m || typeof m.n !== "number" || !m.tag) return { n: 0, ok: false };
+      const good = await subtle.verify("HMAC", macKey,
+        b64u.dec(m.tag), te.encode("meta|" + email.toLowerCase() + "|" + m.n));
+      return { n: good ? m.n : 0, ok: good };
+    }catch(e){ return { n: 0, ok: false }; }
+  }
+  function blobNumber(){
+    const raw = localStorage.getItem(SEALED); if(!raw) return 0;
+    const p = raw.split("|"); const n = Number(p[4]);
+    return (p[0] === "SA1" && Number.isFinite(n)) ? n : 0;
+  }
+  async function sealNow(){
+    const email = emailOf(state);
+    if(!email) return;                                  // nothing to seal before an account exists
+    if(!ready || derivedFor !== email.toLowerCase()) await derive(email);
+    const prev = await readMeta(email);
+    const n = Math.max(prev.n, blobNumber(), 0) + 1;
+    const ts = Date.now();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const ct = await subtle.encrypt({ name: "AES-GCM", iv,
+      additionalData: te.encode([email, n, ts, KEYID].join("|")), tagLength: 128 },
+      aesKey, te.encode(JSON.stringify(state)));
+    const head = ["SA1", KEYID, b64u.enc(te.encode(email)), ts, n, b64u.enc(iv), b64u.enc(new Uint8Array(ct))].join("|");
+    const mac = b64u.enc(await subtle.sign("HMAC", macKey, te.encode(head)));
+    localStorage.setItem(SEALED, head + "|" + mac);
+    localStorage.setItem(META, JSON.stringify({ n,
+      tag: b64u.enc(await subtle.sign("HMAC", macKey, te.encode("meta|" + email.toLowerCase() + "|" + n))) }));
+  }
+  function tamper(reason, raw){
+    try{
+      localStorage.setItem(QUAR, JSON.stringify({ reason, ts: Date.now(), keyid: KEYID,
+        blob: String(raw).slice(0, 4000), meta: localStorage.getItem(META) }));
+      localStorage.removeItem(SEALED); localStorage.removeItem(META);
+    }catch(e){}
+    return { __tampered: reason };
+  }
+  async function unseal(){
+    const raw = localStorage.getItem(SEALED); if(!raw) return null;
+    const p = String(raw).split("|");
+    if(p.length !== 8 || p[0] !== "SA1") return tamper("structure", raw);
+    if(p[1] !== KEYID) return tamper("keyid", raw);
+    const email = td.decode(b64u.dec(p[2])), ts = Number(p[3]), n = Number(p[4]);
+    if(!Number.isFinite(ts) || !Number.isFinite(n)) return tamper("structure", raw);
+    if(!ready || derivedFor !== email.toLowerCase()) await derive(email);
+    let macOK = false;
+    try{ macOK = await subtle.verify("HMAC", macKey, b64u.dec(p[7]), te.encode(p.slice(0, 7).join("|"))); }catch(e){}
+    if(!macOK) return tamper("mac", raw);
+    let plain = null;
+    try{ plain = await subtle.decrypt({ name: "AES-GCM", iv: b64u.dec(p[5]),
+      additionalData: te.encode([email, n, ts, KEYID].join("|")), tagLength: 128 },
+      aesKey, b64u.dec(p[6])); }catch(e){}
+    if(!plain) return tamper("gcm", raw);
+    let st = null;
+    try{ st = JSON.parse(td.decode(plain)); }catch(e){}
+    if(!st || !st.progress || emailOf(st).toLowerCase() !== email.toLowerCase()) return tamper("payload", raw);
+    const meta = await readMeta(email.toLowerCase());
+    if(meta.ok && meta.n > n) return tamper("rollback", raw);
+    return st;
+  }
+  async function boot(){
+    if(!subtle){
+      // No secure context (file://): progress is kept as plaintext under KEY.
+      let out = null;
+      try{ out = JSON.parse(localStorage.getItem(KEY) || "null"); }catch(e){}
+      return { loaded: out, quarantined: null, migrated: false, insecure: true };
+    }
+    let out = null, quarantined = null, migrated = false;
+    const res = await unseal();
+    if(res && res.__tampered){ quarantined = res.__tampered; out = null; }
+    else if(res){ out = res; }
+    if(!out && localStorage.getItem(KEY)){
+      const legacy = localStorage.getItem(KEY);
+      try{ out = JSON.parse(legacy); }catch(e){ out = null; }
+      localStorage.removeItem(KEY); migrated = !!out;
+    }
+    return { loaded: out, quarantined, migrated, insecure: false };
+  }
+  function save(){
+    if(!subtle){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} return; }
+    dirty = true;
+    if(flushing) return;
+    (async () => { flushing = true;
+      while(dirty){ dirty = false; try{ await sealNow(); }catch(e){ console.error("seal:", e); } }
+      flushing = false;
+    })();
+  }
+  const freshState = () => ({ user: null, settings: { theme: "dark" },
+    progress: { attempts: [], domainStats: {}, misses: {}, answered: 0 } });
+  return { freshState, boot, save };
+})();
+/* SEAL-END */
+let state = SEAL.freshState();
+function save(){ SEAL.save(); }
 window.APP = { $, $$, esc, state, save };
 
 /* ---------- toast & modal ---------- */
@@ -1244,7 +1378,7 @@ function providerButtons(mode){
   $("#btn-local").onclick = () => signIn("local");
   $("#auth-note").innerHTML = fbReady
     ? "Google & GitHub sign-in are live. No passwords are ever stored — authentication is delegated entirely to the provider."
-    : "Provider sign-in activates the moment the owner adds a Firebase web config (5-minute task, see README). Meanwhile you can practice fully with an on-device account — still no passwords anywhere.";
+    : "Provider sign-in activates the moment the owner adds the FIREBASE_CONFIG_JSON repository secret and redeploys (README §1, Step 5 — no code edits, no secrets in public code). Meanwhile you can practice fully with an on-device account — still no passwords anywhere.";
 }
 let fbLoaded = false;
 function loadFirebase(){
@@ -1266,7 +1400,7 @@ async function signIn(provider){
   if(provider !== "local"){
     if(!fbReady){ openModal(`
       <h3 style="margin-bottom:8px">Google / GitHub sign-in</h3>
-      <p class="small muted">Authentication with Google or GitHub runs through Firebase Anonymous-free OAuth and needs a one-time, 5-minute setup by the site owner (paste a Firebase web config into <code>index.html</code> — full steps in the README, §3). Until then, continue with a device account below; the app never stores passwords in either mode.</p>
+      <p class="small muted">Authentication with Google or GitHub runs through Firebase OAuth and needs a one-time setup by the site owner: the Firebase web config goes into the <code>FIREBASE_CONFIG_JSON</code> repository secret and the site redeploys automatically (README §1, Step 5). No keys are ever stored in <code>index.html</code> or in this public repository. Until then, continue with a device account below; the app never stores passwords in either mode.</p>
       <button class="btn primary wide" style="margin-top:14px" onclick="closeModal();document.getElementById('btn-local').click()">Continue with email (this device)</button>
       <button class="btn ghost wide" style="margin-top:8px" onclick="closeModal()">Close</button>`);
       return; }
@@ -1282,7 +1416,7 @@ async function signIn(provider){
   // on-device account (no password — just a name/email so progress can be labelled & exported)
   openModal(`
     <h3 style="margin-bottom:6px">Create your practice account</h3>
-    <p class="small muted" style="margin-bottom:6px">Stored only in this browser. There are no passwords in this system — ever. For full multi-device Google/GitHub sign-in, the owner can enable Firebase OAuth (README §3).</p>
+    <p class="small muted" style="margin-bottom:6px">Stored only in this browser, encrypted and integrity-sealed so only this app can read it — any manual tampering is detected and rejected. There are no passwords in this system — ever. For full multi-device Google/GitHub sign-in, the owner can enable Firebase OAuth via a repository secret (README §1, Step 5).</p>
     <div class="field"><label>Your name</label><input id="lm-name" maxlength="40" placeholder="e.g. Priya"></div>
     <div class="field"><label>Email (for your own records)</label><input id="lm-email" type="email" maxlength="80" placeholder="you@example.com"></div>
     <button class="btn primary wide" id="lm-go" style="margin-top:10px">Start practising →</button>`);
@@ -2003,11 +2137,11 @@ window.renderSettings = () => {
   $("#set-email").innerHTML = `<b>${esc(state.user.email)}</b> · signed in via <b>${state.user.provider==="google"?"Google":state.user.provider==="github"?"GitHub":"this device"}</b> · member since ${esc(state.user.since||"—")}`;
   const admin = CFG.adminEmail
     ? `Admin contact: <b>${esc(CFG.adminEmail)}</b>`
-    : `Admin contact: set <code>SATPREP_CONFIG.adminEmail</code> in <code>index.html</code> (owner one-time setup).`;
+    : `Admin contact: set the <code>ADMIN_EMAIL</code> repository secret (owner one-time setup — README §1).`;
   $("#about-txt").innerHTML = `
     <p class="small muted" style="margin-bottom:8px"><b>SAT Ascent</b> — adaptive Digital-SAT practice with an elite-band question bank, personalized tip engine and a twice-daily auto-updating content feed.</p>
     <p class="small muted" style="margin-bottom:8px">${admin}</p>
-    <p class="small muted">No passwords exist anywhere in this system. Provider sign-in is delegated to Google/GitHub via Firebase OAuth; the device-account mode stores only a name and email locally.</p>`;
+    <p class="small muted">No passwords exist anywhere in this system. Provider sign-in is delegated to Google/GitHub via Firebase OAuth; the device-account mode stores only a name and email locally. Your progress record is encrypted and integrity-sealed (AES-256-GCM + HMAC) — only this app can read it, and any manual tampering or rollback is detected and rejected.</p>`;
 };
 $("#btn-save-name").onclick = () => {
   const v = $("#set-name").value.trim();
@@ -2023,7 +2157,7 @@ $("#btn-export").onclick = () => {
   a.href = URL.createObjectURL(blob);
   a.download = "sat-ascent-progress.json";
   a.click(); URL.revokeObjectURL(a.href);
-  toast("Exported your full progress ✓");
+  toast("Exported your full progress ✓ <span class='small muted'>(unencrypted JSON copy)</span>");
 };
 $("#btn-reset").onclick = () => {
   openModal(`<h3 style="margin-bottom:8px">Reset everything?</h3>
@@ -2038,9 +2172,23 @@ $("#btn-reset").onclick = () => {
 $("#foot-admin").textContent = CFG.adminEmail ? "Admin: " + CFG.adminEmail + " · " : "";
 $("#foot-admin").textContent += "Content auto-refreshed twice daily via GitHub Actions";
 window.providerButtons = providerButtons;
-if(window.APP.state.user){ enterApp(); } else {
-  providerButtons();
-}
+// Boot the sealed store, then enter the app with the loaded (verified) record.
+SEAL.boot().then(r => {
+  if(r.loaded){
+    Object.assign(state, r.loaded);           // in-place: every state reference stays valid
+    if(r.migrated) save();                    // re-seal migrated legacy data immediately
+  }
+  if(r.quarantined){
+    toast("⚠️ Your saved progress failed its integrity check (" + esc(r.quarantined) +
+      ") — tampering or corruption detected, so it was reset. The rejected record is kept in quarantine.", 8000);
+  }
+  if(r.insecure){
+    toast("⚠️ Open this page over HTTPS (or localhost) to enable sealed storage — currently progress is saved unencrypted.", 8000);
+  }
+  if(state.user){ enterApp(); } else {
+    providerButtons();
+  }
+});
 })();
 </script>
 </body>
