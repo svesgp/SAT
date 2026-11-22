@@ -66,6 +66,10 @@ jobs:
           print("app-config.js written | firebase:", "yes" if fb else "not configured (on-device accounts only)")
           PY
           cp index.html _site/
+          cp robots.txt sitemap.xml _site/ 2>/dev/null || true
+          cp sw.js _site/ 2>/dev/null || true
+          cp manifest.webmanifest _site/ 2>/dev/null || true
+          cp assets/icon-192.png assets/icon-512.png _site/assets/ 2>/dev/null || true
           cp assets/app-config.sample.js _site/assets/ 2>/dev/null || true
           cp -r data/. _site/data/ 2>/dev/null || true
 
