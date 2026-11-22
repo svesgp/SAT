@@ -8,6 +8,44 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M14 46 L28 22 L37 36 L44 27 L52 46 Z' fill='white' opacity='.92'/%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0b0d14">
+<link rel="canonical" href="https://svesgp.github.io/SAT/">
+<meta property="og:site_name" content="SAT Ascent">
+<meta property="og:title" content="SAT Ascent — Free Adaptive Practice for the Digital SAT">
+<meta property="og:description" content="Free Digital SAT practice: module-adaptive full tests, topic tests, lessons and flashcards, honest score estimates, an offline AI tutor, and progress backups you own. No signup walls — works on phone and desktop.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://svesgp.github.io/SAT/">
+<meta property="og:image" content="https://svesgp.github.io/SAT/assets/icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SAT Ascent — Free Adaptive Practice for the Digital SAT">
+<meta name="twitter:description" content="Free Digital SAT practice: module-adaptive full tests, topic tests, lessons and flashcards, honest score estimates, an offline AI tutor, and progress backups you own. No signup walls — works on phone and desktop.">
+<meta name="twitter:image" content="https://svesgp.github.io/SAT/assets/icon-512.png">
+<meta name="robots" content="index,follow">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "SAT Ascent",
+  "url": "https://svesgp.github.io/SAT/",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Any (web app; installable PWA)",
+  "description": "Free Digital SAT practice: module-adaptive full tests, topic tests, lessons and flashcards, honest score estimates, an offline AI tutor, and progress backups you own. No signup walls \u2014 works on phone and desktop.",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": [
+    "Module-adaptive full-length Digital SAT practice tests",
+    "Topic tests and Elite-band drills",
+    "Reading & Writing and Math lessons with flashcards",
+    "Offline AI tutor with built-in SAT knowledge base",
+    "Daily question with streaks",
+    "Progress tracking and score estimates",
+    "Backup and restore of progress (file, folder, GitHub, Google Drive)"
+  ]
+}
+</script>
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <style>
 :root{
@@ -290,6 +328,20 @@ footer .row{gap:8px}
 
 </head>
 <body>
+<noscript>
+  <div style="max-width:760px;margin:40px auto;padding:24px;font-family:Georgia,serif">
+    <h1>SAT Ascent — Free Adaptive Practice for the Digital SAT</h1>
+    <p>Free Digital SAT practice: module-adaptive full tests, topic tests, lessons and flashcards, honest score estimates, an offline AI tutor, and progress backups you own. No signup walls — works on phone and desktop. JavaScript is required for the interactive app — enable it and reload this page.</p>
+    <ul>
+      <li>Full-length module-adaptive practice tests (Reading &amp; Writing, Math)</li>
+      <li>Topic tests, Elite-band drills and an error-log review that re-drills your misses</li>
+      <li>Lessons, flashcards and a daily question to keep your streak alive</li>
+      <li>Offline AI tutor: formulas, grammar rules, scoring and instant quizzes from the built-in knowledge base</li>
+      <li>Progress backups you own: download, folder, GitHub or Google Drive — and restore anytime</li>
+    </ul>
+  </div>
+</noscript>
+
 <!-- ================= LANDING / AUTH ================= -->
 <section id="view-auth" class="view on">
   <div class="shell">
@@ -3700,7 +3752,7 @@ const KB = [
 {t:"Progress & statistics", k:["my stats","progress page","accuracy","statistics","estimated score","am i improving","dashboard numbers","what do the numbers mean","estimated total"],
  b:`The <b>Progress</b> page tracks tests taken, estimated total score (from your last 3 full runs), overall accuracy, and per-domain accuracy bars.<br>Domain accuracy is the actionable number: anything under ~70% deserves a topic test this week. Estimates stabilize after 2–3 full tests — early ones swing wildly because the adaptive calibration is still learning you.`},
 {t:"Saving & backing up progress", k:["save","backup","export","github backup","folder backup","lose my progress","transfer progress","new device","download data","restore"],
- b:`Progress auto-seals to this device. To keep it safe: <b>Settings → Save &amp; sync</b> offers a one-click download file, a <b>GitHub</b> backup (paste a fine-grained token with Contents read/write) and a local <b>folder</b> backup on Chromium browsers.<br>To move devices: export on the old one, then import the same file on the new one from the same card. Nothing is stored on any server — the backups are yours alone.`},
+ b:`Progress auto-seals to this device. To keep it safe: <b>Settings → Save &amp; sync → Open save center</b> offers a one-click download file, a <b>GitHub</b> backup (fine-grained token, Contents read/write), a local <b>folder</b> on Chrome/Edge, and Google Drive.<br>To move devices: export on the old one, then press <b>↑ Restore file</b> on the new one and load the same JSON (drag-and-drop works too). Nothing is stored on any server — the backups are yours alone.`},
 {t:"Themes & appearance", k:["theme","themes","appearance","dark mode","light mode","change the look","game theme","neon","colors","custom look"],
  b:`Click the <b>🎨 button</b> in the header (or Settings → Appearance) to switch among 8 looks: Midnight, Daylight, 🎮 <b>Neon Arcade</b> (animated game grid), 🌅 Synthwave, ⚡ Cyberpunk, 🧛 Dracula, ❄️ Nord, and 🍵 Matcha.<br>Your theme is saved with your profile and restored on your next sign-in.`},
 {t:"Your account & sign-in", k:["sign in","login","account","google","github","password","provider","how do i log","forgot password","sign out","delete my data"],
@@ -3963,6 +4015,163 @@ window.AI_CHIPS = ["Quadratic formula","How is the SAT scored?","Quiz me — 3 q
 (function(){
   const note = document.querySelector("#ai-panel .ai-head .tiny.faint");
   if(note) note.textContent = "📚 offline tutor answers instantly & unlimited · 🤖 cloud AI joins for deep dives · can make mistakes";
+})();
+})();
+</script>
+<script>
+/* ============ SAT Ascent — restore / upload backup feature ============
+   The save center could export progress (download, folder, GitHub, Drive)
+   but had no way to LOAD a backup back onto a device. This adds:
+   1. "⬆ Restore from a backup file" card inside the Save Center modal
+   2. A direct "⬆ Restore file" button on the Settings save card
+   3. Click-to-pick AND drag-and-drop JSON restore, with a summary
+      confirmation before anything is overwritten
+   4. Current sign-in identity is preserved; progress/settings are replaced
+   ==================================================================== */
+(function(){
+"use strict";
+const { esc, state, save } = window.APP;
+if(window.__SATASC_RESTORE__) return;
+window.__SATASC_RESTORE__ = true;
+const toast = window.toast;
+
+/* ---------- parse & validate ---------- */
+function findStateObject(obj){
+  if(obj && obj.__app === "SAT Ascent" && obj.progress) return obj;   /* plain export */
+  if(obj && obj.__app === "SAT Ascent" && obj.state && obj.state.progress) return obj.state;
+  if(obj && obj.progress && (obj.settings || obj.answers || obj.attempts)) return obj; /* hand-made */
+  return null;
+}
+function summarize(s){
+  const at = (s.progress && s.progress.attempts) || [];
+  const answered = at.reduce((a, x) => a + ((x.details || []).length || 0), 0);
+  const streak = (s.progress && s.progress.streak && s.progress.streak.best) || (s.progress && s.progress.bestStreak) || 0;
+  return { exported: s.__exportedAt ? new Date(s.__exportedAt).toLocaleString() : "unknown date",
+           tests: at.length, answered, streak,
+           who: s.user && s.user.name ? String(s.user.name) : "unknown",
+           email: s.user && s.user.email ? String(s.user.email) : "" };
+}
+function restoreBackup(s){
+  try{
+    const keep = state.user;                       /* current session identity wins */
+    Object.keys(s).forEach(k => {
+      if(k === "user" || k.charAt(0) === "_") return;
+      state[k] = s[k];
+    });
+    state.user = keep || s.user || state.user;
+    save();
+    try{ sessionStorage.setItem("satasc-restored", "1"); }catch(e){}
+    location.reload();
+  }catch(e){
+    toast("⚠️ Restore failed unexpectedly: " + esc(e && e.message ? e.message : String(e)));
+  }
+}
+function handleFile(file){
+  if(!file) return;
+  if(file.size > 8 * 1024 * 1024){ toast("⚠️ That file is too large to be a progress backup."); return; }
+  const rd = new FileReader();
+  rd.onload = () => {
+    let obj = null;
+    try{ obj = JSON.parse(String(rd.result)); }
+    catch(e){ toast("⚠️ That file isn't valid JSON — pick the backup you downloaded from SAT Ascent."); return; }
+    const s = findStateObject(obj);
+    if(!s){
+      toast("⚠️ That doesn't look like an SAT Ascent backup (missing progress data).");
+      return;
+    }
+    const f = summarize(s);
+    window.openModal(`<h3 style="margin-bottom:6px">⬆ Restore this backup?</h3>
+      <p class="small muted">File <b>${esc(file.name)}</b> — exported ${esc(f.exported)} · saved by <b>${esc(f.who)}</b>${f.email ? " (" + esc(f.email) + ")" : ""} · <b>${f.tests}</b> test(s) · ${f.answered} answered questions${f.streak ? " · best streak 🔥" + f.streak : ""}.</p>
+      <p class="small muted">Restoring <b>replaces the progress and settings on this device</b> with the backup's contents. Your current sign-in stays active${f.email ? " — if the backup belongs to " + esc(f.email) + ", sign in with that account first for the histories to merge cleanly" : ""}.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="rs-go">⬆ Restore now</button>
+        <button class="btn ghost" onclick="window.closeModal()">Cancel</button>
+      </div>`);
+    const go = document.getElementById("rs-go");
+    if(go) go.onclick = () => restoreBackup(s);
+  };
+  rd.onerror = () => toast("⚠️ Could not read that file — try again or pick another copy.");
+  rd.readAsText(file);
+}
+
+/* ---------- restore card UI ---------- */
+function restoreCardHtml(){
+  return `<div class="saveopt" id="rs-card"><div class="ico">⬆</div><div class="bd">
+    <h5>Restore from a backup file</h5>
+    <p>Move progress to this device: pick the JSON file you downloaded (or drag it onto this card). You can also restore a
+    <b>GitHub</b> or <b>Drive</b> backup — download it from there first, then load it here.</p>
+    <div class="frow"><input id="rs-file" type="file" accept=".json,application/json" style="flex:2"></div>
+    <button class="btn sm primary" id="rs-pick">⬆ Choose file &amp; restore</button></div></div>`;
+}
+function bindRestoreCard(){
+  const card = document.getElementById("rs-card");
+  if(!card) return;
+  const inp = document.getElementById("rs-file");
+  const pick = document.getElementById("rs-pick");
+  if(pick && inp) pick.onclick = () => inp.click();
+  if(inp) inp.onchange = () => { handleFile(inp.files && inp.files[0]); inp.value = ""; };
+  ["dragover","dragenter"].forEach(ev => card.addEventListener(ev, e => {
+    e.preventDefault(); card.style.outline = "2px dashed var(--accent)"; card.style.outlineOffset = "4px";
+  }));
+  ["dragleave","drop"].forEach(ev => card.addEventListener(ev, e => {
+    e.preventDefault(); card.style.outline = "";
+  }));
+  card.addEventListener("drop", e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) handleFile(f);
+  });
+}
+function openRestoreModal(){
+  window.openModal(`<h3 style="margin-bottom:4px">⬆ Restore your progress</h3>
+    <p class="small muted">Load a backup you exported earlier (Download / folder / GitHub / Google Drive) to bring it to this device.</p>
+    ${restoreCardHtml()}
+    <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="window.closeModal()">Close</button></div>`);
+  bindRestoreCard();
+}
+window.openRestoreModal = openRestoreModal;
+
+/* ---------- weave into the Save Center modal ---------- */
+const _osc = window.openSaveCenter;
+window.openSaveCenter = function(){
+  const r = _osc.apply(this, arguments);
+  try{
+    const row = document.querySelector("#modal .row");
+    if(row){
+      row.insertAdjacentHTML("beforebegin", restoreCardHtml());
+      bindRestoreCard();
+    }
+  }catch(e){ console.error(e); }
+  return r;
+};
+
+/* ---------- direct button on the Settings save card ---------- */
+function ensureSettingsButton(){
+  const card = document.getElementById("card-savecenter");
+  if(!card || document.getElementById("btn-restore-file")) return;
+  const row = card.querySelector(".row");
+  if(!row) return;
+  const b = document.createElement("button");
+  b.className = "btn sm"; b.id = "btn-restore-file";
+  b.innerHTML = "⬆ Restore file";
+  b.onclick = () => openRestoreModal();
+  row.appendChild(b);
+}
+const _svr = window.showView;
+window.showView = function(name){
+  const r = _svr.apply(this, arguments);
+  if(name === "settings"){ try{ ensureSettingsButton(); }catch(e){ console.error(e); } }
+  return r;
+};
+ensureSettingsButton();   /* in case settings was already rendered */
+
+/* ---------- welcome-back toast after a restore reload ---------- */
+(function(){
+  try{
+    if(sessionStorage.getItem("satasc-restored") === "1"){
+      sessionStorage.removeItem("satasc-restored");
+      setTimeout(() => toast("✅ Progress restored from your backup — welcome back!"), 900);
+    }
+  }catch(e){}
 })();
 })();
 </script>

@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# The app itself is one page; data files are fetched by it, not for direct reading.
+Disallow: /data/app-config.js
+
+Sitemap: https://svesgp.github.io/SAT/sitemap.xml
