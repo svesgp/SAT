@@ -3765,7 +3765,12 @@ function matchDomains(low){
   return hits;
 }
 function bankPicks(low, n){
-  const pool = (window.allStatic ? window.allStatic() : []).filter(q => q && q.q && q.a != null && Array.isArray(q.ch) && q.ch.length === 4);
+  let pool = (window.allStatic ? window.allStatic() : []).filter(q => q && q.q && q.a != null && Array.isArray(q.ch) && q.ch.length === 4);
+  /* pre-login or fresh boot: activate the default module so the bank exists */
+  if(!pool.length && window.MODULES && window.MODULES.length && window.activateModule && !window.TEST_ACTIVE()){
+    try{ window.activateModule(window.MODULES[0].id); }catch(e){ /* non-fatal */ }
+    pool = (window.allStatic ? window.allStatic() : []).filter(q => q && q.q && q.a != null && Array.isArray(q.ch) && q.ch.length === 4);
+  }
   if(!pool.length) return null;
   const doms = matchDomains(low);
   let list = pool;
