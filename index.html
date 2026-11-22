@@ -22,6 +22,76 @@ html[data-theme="light"]{
   --text:#171b26; --muted:#5a6377; --faint:#8b93a6;
   --shadow:0 8px 24px rgba(23,27,38,.08);
 }
+/* ---- extra themes (picked in the header 🎨 button or Settings → Appearance) ---- */
+html[data-theme="game"]{
+  --bg:#06070b; --bg2:#0a0c12; --card:#0d1017; --card2:#11151f; --line:#1d2330;
+  --text:#d9f2df; --muted:#7fa88c; --faint:#4e6b57;
+  --accent:#39e75f; --accent2:#b45cff; --good:#39e75f; --bad:#ff4d6d; --warn:#ffd23f;
+  --grad:linear-gradient(135deg,#39e75f 0%,#b45cff 100%);
+}
+html[data-theme="game"] body{
+  background-image:radial-gradient(1000px 480px at 85% -10%, rgba(57,231,95,.10), transparent 60%),
+                   radial-gradient(900px 420px at -10% 15%, rgba(180,92,255,.12), transparent 55%);
+}
+html[data-theme="game"] body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(rgba(57,231,95,.045) 1px, transparent 1px),
+                   linear-gradient(90deg, rgba(57,231,95,.045) 1px, transparent 1px);
+  background-size:44px 44px;
+  animation:gridpan 16s linear infinite;
+}
+@keyframes gridpan{ to{ background-position:44px 44px, 44px 44px; } }
+html[data-theme="synthwave"]{
+  --bg:#170f2b; --bg2:#1e1438; --card:#241943; --card2:#2b1e4f; --line:#3a2a66;
+  --text:#f2e9ff; --muted:#a793cc; --faint:#6e5a9b;
+  --accent:#ff4ecd; --accent2:#33e1ff; --good:#3ef2a5; --bad:#ff5d7e; --warn:#ffcf5c;
+  --grad:linear-gradient(135deg,#ff4ecd 0%,#33e1ff 100%);
+}
+html[data-theme="synthwave"] body{
+  background-image:radial-gradient(1100px 520px at 50% 120%, rgba(255,78,205,.18), transparent 60%),
+                   radial-gradient(900px 420px at -10% -10%, rgba(51,225,255,.12), transparent 55%);
+}
+html[data-theme="cyberpunk"]{
+  --bg:#0b0f12; --bg2:#0e1418; --card:#10161b; --card2:#151d24; --line:#1f2b34;
+  --text:#e8f6f2; --muted:#8fa9a3; --faint:#5c716d;
+  --accent:#fcee0a; --accent2:#00f0ff; --good:#00f0a0; --bad:#ff2e63; --warn:#fcee0a;
+  --grad:linear-gradient(135deg,#fcee0a 0%,#00f0ff 100%);
+}
+html[data-theme="cyberpunk"] body{
+  background-image:radial-gradient(1000px 480px at 90% -10%, rgba(0,240,255,.10), transparent 60%),
+                   radial-gradient(900px 420px at -10% 20%, rgba(252,238,10,.07), transparent 55%);
+}
+html[data-theme="dracula"]{
+  --bg:#282a36; --bg2:#21222c; --card:#343746; --card2:#3a3d4f; --line:#44475a;
+  --text:#f8f8f2; --muted:#a9b0c8; --faint:#6272a4;
+  --accent:#bd93f9; --accent2:#8be9fd; --good:#50fa7b; --bad:#ff5555; --warn:#f1fa8c;
+  --grad:linear-gradient(135deg,#bd93f9 0%,#ff79c6 100%);
+}
+html[data-theme="dracula"] body{
+  background-image:radial-gradient(1000px 480px at 85% -10%, rgba(189,147,249,.12), transparent 60%),
+                   radial-gradient(900px 420px at -10% 15%, rgba(255,121,198,.08), transparent 55%);
+}
+html[data-theme="nord"]{
+  --bg:#2e3440; --bg2:#292e39; --card:#3b4252; --card2:#434c5e; --line:#4c566a;
+  --text:#eceff4; --muted:#b9c2d0; --faint:#7f8ca4;
+  --accent:#88c0d0; --accent2:#81a1c1; --good:#a3be8c; --bad:#bf616a; --warn:#ebcb8b;
+  --grad:linear-gradient(135deg,#88c0d0 0%,#b48ead 100%);
+}
+html[data-theme="nord"] body{
+  background-image:radial-gradient(1000px 480px at 85% -10%, rgba(136,192,208,.10), transparent 60%),
+                   radial-gradient(900px 420px at -10% 15%, rgba(180,142,173,.08), transparent 55%);
+}
+html[data-theme="matcha"]{
+  --bg:#f2f7ee; --bg2:#eaf2e4; --card:#ffffff; --card2:#f3f8ef; --line:#dbe8d4;
+  --text:#1f2a20; --muted:#5c6e5f; --faint:#8ba08d;
+  --accent:#3e9e5c; --accent2:#2c8c7d; --good:#3e9e5c; --bad:#d06262; --warn:#d9a13b;
+  --shadow:0 8px 24px rgba(31,42,32,.08);
+  --grad:linear-gradient(135deg,#3e9e5c 0%,#2c8c7d 100%);
+}
+html[data-theme="matcha"] body{
+  background-image:radial-gradient(1000px 480px at 85% -10%, rgba(62,158,92,.10), transparent 60%),
+                   radial-gradient(900px 420px at -10% 15%, rgba(44,140,125,.08), transparent 55%);
+}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{
@@ -530,6 +600,27 @@ window.paceOf = sec => {
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+/* Whitelist sanitizer for bank content (scraper-sourced passages/stems):
+   keeps the formatting tags the bank legitimately uses (b/i/em/strong/u/br/
+   sup/sub and span with a plain class such as 'ul'), drops every other tag
+   including any attributes (onclick, href, style…), and escapes stray angle
+   brackets so math like "x < 5" still renders as text. */
+const SAFE_TAG = /^(?:b|i|em|strong|u|br|sup|sub)$/i;
+const safeHtml = s => String(s)
+  /* escape everything first, then restore only the whitelisted tags */
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  .replace(/&lt;(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:"[^"]*"|'[^']*'|[^"'>])*?)&gt;/g, (m, close, tag, attrs) => {
+    const t = tag.toLowerCase();
+    if(close) return (SAFE_TAG.test(t) || t === "span") ? "</" + t + ">" : "";
+    if(SAFE_TAG.test(t)) return "<" + t + ">";
+    if(t === "span"){
+      const cl = attrs.match(/class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const val = (cl ? (cl[1] || cl[2] || cl[3] || "") : "").trim();
+      return /^[\w -]{0,40}$/.test(val) ? '<span class="' + val + '">' : "<span>";
+    }
+    return "";
+  });
+window.safeHtml = safeHtml;
 
 /* ---------- sealed persistent state ----------
    The whole student record (account, attempts, mastery, misses, settings) is
@@ -926,14 +1017,48 @@ window.providerButtons = providerButtons;
 $("#btn-signout").onclick = signOut;
 
 /* ---------- theme ---------- */
+window.SAT_THEMES = [
+  { id:"dark",      name:"Midnight",  icon:"🌙" },
+  { id:"light",     name:"Daylight",  icon:"☀️" },
+  { id:"game",      name:"Neon Arcade", icon:"🎮" },
+  { id:"synthwave", name:"Synthwave", icon:"🌅" },
+  { id:"cyberpunk", name:"Cyberpunk", icon:"⚡" },
+  { id:"dracula",   name:"Dracula",   icon:"🧛" },
+  { id:"nord",      name:"Nord",      icon:"❄️" },
+  { id:"matcha",    name:"Matcha",    icon:"🍵" },
+];
 window.applyTheme = t => {
+  if(!window.SAT_THEMES.some(x => x.id === t)) t = "dark";
   document.documentElement.dataset.theme = t;
-  $("#btn-theme").textContent = t==="dark" ? "🌙" : "☀️";
+  const th = window.SAT_THEMES.find(x => x.id === t);
+  $("#btn-theme").textContent = th.icon;
+  $("#btn-theme").title = "Theme: " + th.name;
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.content = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0b0d14";
 };
-$("#btn-theme").onclick = () => {
-  state.settings.theme = state.settings.theme==="dark" ? "light" : "dark";
-  applyTheme(state.settings.theme); save();
-};
+function themePopover(){
+  let p = document.getElementById("theme-pop");
+  if(p){ p.remove(); return; }
+  p = document.createElement("div");
+  p.id = "theme-pop";
+  p.style.cssText = "position:fixed;top:64px;right:14px;z-index:90;background:var(--card);border:1px solid var(--line);" +
+    "border-radius:16px;box-shadow:var(--shadow);padding:10px;display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:6px;max-width:min(92vw,340px)";
+  p.innerHTML = `<div style="grid-column:1/-1;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:2px 6px 6px">Appearance</div>` +
+    window.SAT_THEMES.map(t => `<button data-th="${t.id}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:${document.documentElement.dataset.theme===t.id?"var(--card2)":"transparent"};color:var(--text);cursor:pointer;font:inherit;font-size:.88rem"><span style="font-size:1rem">${t.icon}</span>${t.name}</button>`).join("");
+  document.body.appendChild(p);
+  p.addEventListener("click", e => {
+    const b = e.target.closest("[data-th]");
+    if(!b) return;
+    state.settings.theme = b.dataset.th;
+    applyTheme(state.settings.theme); save();
+    p.remove();
+    toast("Theme: <b>" + esc(window.SAT_THEMES.find(x=>x.id===b.dataset.th).name) + "</b>");
+  });
+  setTimeout(() => document.addEventListener("click", function h(ev){
+    if(!p.contains(ev.target) && ev.target !== $("#btn-theme") && !$("#btn-theme").contains(ev.target)){ p.remove(); document.removeEventListener("click", h); }
+  }), 0);
+}
+$("#btn-theme").onclick = themePopover;
 
 /* ---------- helpers: pool & stats ---------- */
 /* Pools are supplied by the active module (activateModule above); these defaults
@@ -1282,12 +1407,12 @@ function renderQuestion(){
   recordTime();
   const m = T.modules[T.cur], q = m.questions[T.qi];
   $("#t-question").innerHTML = `
-    <div class="qpass serif">${q.p ? `<div class="pn">${domInfo(q.d).name} · ${q.tier==="elite"?"Elite band":q.tier==="advanced"?"Advanced band":"Core band"}</div>${q.p}` : ""}</div>
+    <div class="qpass serif">${q.p ? `<div class="pn">${domInfo(q.d).name} · ${q.tier==="elite"?"Elite band":q.tier==="advanced"?"Advanced band":"Core band"}</div>${safeHtml(q.p)}` : ""}</div>
     ${q.p ? "" : `<div class="pn" style="font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent2);margin-bottom:8px">${domInfo(q.d).name} · ${q.tier}</div>`}
-    <div class="qstem">${q.q}</div>
+    <div class="qstem">${safeHtml(q.q)}</div>
     <div class="opts">${q.ch.map((c,i)=>`
       <div class="opt ${T.answers[q.id]===i?"sel":""}" onclick="answerQ(${i})">
-        <span class="ol">${"ABCD"[i]}</span><span>${c}</span>
+        <span class="ol">${"ABCD"[i]}</span><span>${safeHtml(c)}</span>
       </div>`).join("")}</div>
     <div class="row" style="margin-top:14px">
       <button class="btn sm" id="btn-aihelp">🤖 Ask AI tutor</button>
@@ -1529,10 +1654,10 @@ window.renderResults = a => {
   const reviewHTML = missed.length ? missed.map((d,i)=>`
     <details class="rv no"><summary class="small" style="cursor:pointer;font-weight:700">
       ${d.correct?"✅":"❌"} Q${i+1} · ${esc(domInfo(d.d).name)} · ${d.tier}${d.skipped?" · skipped":""}</summary>
-      <div class="serif small" style="margin:8px 0">${d.p||""}</div>
-      <div class="small" style="margin-bottom:6px">${d.q}</div>
-      <div class="small" style="margin-bottom:6px">${d.ch.map((c,ci)=>`<div style="${ci===d.a?"color:var(--good);font-weight:700":""}">${"ABCD"[ci]}. ${c}</div>`).join("")}</div>
-      <p class="small muted" style="margin-top:8px"><b>Why:</b> ${d.e}</p></details>`).join("")
+      <div class="serif small" style="margin:8px 0">${safeHtml(d.p||"")}</div>
+      <div class="small" style="margin-bottom:6px">${safeHtml(d.q)}</div>
+      <div class="small" style="margin-bottom:6px">${d.ch.map((c,ci)=>`<div style="${ci===d.a?"color:var(--good);font-weight:700":""}">${"ABCD"[ci]}. ${safeHtml(c)}</div>`).join("")}</div>
+      <p class="small muted" style="margin-top:8px"><b>Why:</b> ${safeHtml(d.e)}</p></details>`).join("")
     : `<p class="small muted">Perfect run — every question correct! 🎉 Increase the difficulty with an Elite-only drill.</p>`;
   const tips = window.buildTips(a);
   const sameModule = !a.mod || a.mod === (window.CUR && window.CUR.id) || (window.CUR && window.CUR.legacy && !a.mod);
@@ -3031,10 +3156,11 @@ setInterval(refreshPublicConfig, 10 * 60 * 1000);   // every 10 minutes
 
 /* ============================================================
    CREDENTIAL-LINK FLOW (auth/account-exists-with-different-credential)
+   Seamless: whichever provider the student clicks, they end up on
+   their own page. If the email already belongs to another provider,
+   that provider's popup opens immediately, the credentials are
+   linked, and both work from then on.
    ============================================================ */
-function linkDoneMsg(name, linked){
-  toast("Welcome back, <b>" + esc(name) + "</b>!" + (linked ? " Your GitHub sign-in is now linked to this account — next time it works directly." : ""), 6000);
-}
 window.SATASC_linkConflict = async function(err){
   if(!err || err.code !== "auth/account-exists-with-different-credential") return false;
   if(!window.firebase) return false;
@@ -3055,23 +3181,30 @@ window.SATASC_linkConflict = async function(err){
     }catch(e){ /* non-fatal */ }
   };
 
-  const useGoogle = async () => {
-    const r2 = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  const finish = async (provId, prov) => {
+    // sign in with the provider the account already uses, then link the
+    // credential the student actually clicked — one account, any provider
+    const r2 = await auth.signInWithPopup(prov);
     let linked = false;
     if(pending){
       try{ await r2.user.linkWithCredential(pending); linked = true; }
       catch(e){ if(e.code !== "auth/credential-already-in-use") console.warn(e); }
     }
     await ghLoginFromCred();
-    if(!window.__SATASC_GHL) window.__SATASC_GHL = "";
-    window.SATASC_setUser(r2.user.displayName || "Student", r2.user.email || r2.user.uid, "google");
-    linkDoneMsg(r2.user.displayName || "Student", linked);
+    const provName = provId === "google.com" ? "google" : "github";
+    window.SATASC_setUser(r2.user.displayName || "Student", r2.user.email || r2.user.uid, provName);
+    toast("Welcome back, <b>" + esc(r2.user.displayName || "Student") + "</b>!" +
+      (linked ? " Sign-ins linked — both providers now open your same account." : ""), 6000);
     return true;
   };
+  const popupProvider = provId =>
+    provId === "google.com" ? new firebase.auth.GoogleAuthProvider() : new firebase.auth.GithubAuthProvider();
+
   const usePassword = () => new Promise(res => {
-    window.openModal(`<h3 style="margin-bottom:6px">Link your GitHub sign-in</h3>
-      <p class="small muted"><b>${esc(email)}</b> already has an email+password account here. Enter that password once — your GitHub sign-in will be linked to it permanently.</p>
-      <div class="field"><input id="lk-pw" type="password" placeholder="Existing password"></div>
+    window.openModal(`<h3 style="margin-bottom:6px">Finish sign-in</h3>
+      <p class="small muted"><b>${esc(email)}</b> already has an email+password account. Enter that password once —
+      your ${gh ? "GitHub" : "new"} sign-in gets linked to it permanently and both will open your same account.</p>
+      <div class="field"><input id="lk-pw" type="password" placeholder="Existing password" autocomplete="current-password"></div>
       <div class="row" style="margin-top:12px">
         <button class="btn primary" id="lk-go">Sign in &amp; link</button>
         <button class="btn ghost" onclick="closeModal()">Cancel</button>
@@ -3087,26 +3220,43 @@ window.SATASC_linkConflict = async function(err){
         window.__SATASC_GHL = window.__SATASC_GHL || "";
         window.closeModal();
         window.SATASC_setUser(r2.user.displayName || email.split("@")[0], email, "device");
-        linkDoneMsg(r2.user.displayName || "Student", linked);
+        toast("Welcome back, <b>" + esc(r2.user.displayName || "Student") + "</b>!" + (linked ? " Sign-ins linked — both methods now open your same account." : ""), 6000);
         res(true);
       }catch(e){ toast("Password sign-in failed: " + esc(e.message||e), 5000); }
     };
   });
 
-  if(methods.includes("google.com")){
-    window.openModal(`<h3 style="margin-bottom:6px">One quick step</h3>
-      <p class="small muted"><b>${esc(email)}</b> is already registered with <b>Google sign-in</b>, so Firebase blocks a second first-time sign-in with GitHub for the same address. Confirm the Google popup, and this app will <b>permanently link GitHub</b> to that account — after that, GitHub sign-in works directly.</p>
-      <div class="row" style="margin-top:12px">
-        <button class="btn primary" id="lk-gg">Continue with Google &amp; link GitHub</button>
-        <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      </div>`);
-    $("#lk-gg").onclick = async () => { window.closeModal(); try{ await useGoogle(); }catch(e){ toast("Google step failed or was cancelled: " + esc(e.message||e), 5000); } };
-    return true;
+  const oauthMethods = ["google.com", "github.com"].filter(m => methods.includes(m) && (!pending || pending.providerId !== m));
+  if(oauthMethods.length){
+    const provId = oauthMethods[0];
+    try{
+      // seamless: right after the first popup closes, most browsers still
+      // allow this one — the student just confirms the other provider and
+      // lands straight on their own page
+      return await finish(provId, popupProvider(provId));
+    }catch(e2){
+      const transient = ["auth/popup-blocked", "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/user-cancelled"];
+      if(!transient.includes(e2.code)){ toast("Sign-in failed: " + esc(e2.message||e2), 5000); return true; }
+      if(e2.code === "auth/popup-closed-by-user" || e2.code === "auth/user-cancelled" || e2.code === "auth/cancelled-popup-request"){
+        toast("Cancelled — nothing was changed. Try signing in again.", 4000); return true;
+      }
+      // popup blocked → one explicit click, which is itself a fresh gesture
+      window.openModal(`<h3 style="margin-bottom:6px">Finish sign-in</h3>
+        <p class="small muted">Your browser blocked the automatic hand-off popup. One click and you're in —
+        ${provId === "google.com" ? "Google" : "GitHub"} confirms it's you, the accounts get linked, and your page opens.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary wide" id="lk-auto">Continue with ${provId === "google.com" ? "Google" : "GitHub"} →</button>
+          <button class="btn ghost wide" style="margin-top:8px" onclick="closeModal()">Cancel</button>
+        </div>`);
+      $("#lk-auto").onclick = async () => { window.closeModal(); try{ await finish(provId, popupProvider(provId)); }catch(e){ toast("Sign-in failed or was cancelled: " + esc(e.message||e), 5000); } };
+      return true;
+    }
   }
   if(methods.includes("password")){ await usePassword(); return true; }
-  window.openModal(`<h3 style="margin-bottom:6px">Sign-in needs one extra step</h3>
-    <p class="small muted">The address <b>${esc(email)}</b> already belongs to an account created with
-    <b>${esc(methods.length ? methods.join(", ") : "another sign-in method")}</b>. Sign in that way once; this app then links your ${gh ? "GitHub" : "new"} sign-in to it automatically, so both work from now on. (Firebase requires this confirmation to protect the account.)</p>
+  window.openModal(`<h3 style="margin-bottom:6px">Finish sign-in</h3>
+    <p class="small muted">The address <b>${esc(email)}</b> is registered with
+    <b>${esc(methods.length ? methods.join(", ") : "another sign-in method")}</b>. Sign in that way once — the app then links your
+    ${gh ? "GitHub" : "new"} sign-in to it automatically, and both will open your same account from now on.</p>
     <div class="row" style="margin-top:12px"><button class="btn primary" onclick="closeModal()">Got it</button></div>`);
   return true;
 };
@@ -3139,8 +3289,37 @@ window.showView = function(name){
   }
   const r = _sv3.apply(this, arguments);
   if(name === "admin"){ try{ renderAdmin(); }catch(e){ console.error("admin:", e); } }
+  if(name === "settings"){ try{ ensureThemeCard(); }catch(e){ console.error("theme card:", e); } }
   return r;
 };
+
+/* ---------- Settings → Appearance card (theme picker) ---------- */
+function ensureThemeCard(){
+  const shell = document.querySelector("#view-settings .shell");
+  if(!shell || document.getElementById("card-theme")) return;
+  const c = document.createElement("div");
+  c.className = "card"; c.id = "card-theme"; c.style.marginTop = "14px";
+  c.innerHTML = `<h3>🎨 Appearance</h3>
+    <p class="small muted" style="margin-bottom:10px">Pick the look that keeps you coming back — it applies instantly and stays on this device. The 🎨 button in the header does the same thing.</p>
+    <div class="row" style="flex-wrap:wrap;gap:8px" id="theme-grid"></div>`;
+  const grid = c.querySelector("#theme-grid");
+  const paint = () => {
+    grid.innerHTML = window.SAT_THEMES.map(t => {
+      const on = document.documentElement.dataset.theme === t.id;
+      return `<button data-th="${t.id}" class="btn sm ${on ? "primary" : "ghost"}">${t.icon} ${t.name}</button>`;
+    }).join("");
+  };
+  paint();
+  grid.addEventListener("click", e => {
+    const b = e.target.closest("[data-th]");
+    if(!b) return;
+    state.settings.theme = b.dataset.th;
+    window.applyTheme(state.settings.theme); save();
+    toast("Theme: <b>" + esc((window.SAT_THEMES.find(x => x.id === b.dataset.th) || {}).name || b.dataset.th) + "</b>");
+    paint();
+  });
+  shell.appendChild(c);
+}
 
 let ADM = { tab: "overview", pub: null, traffic: null, repo: null, runs: null };
 async function renderAdmin(){
