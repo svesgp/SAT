@@ -790,7 +790,7 @@ window.showView = (name, push=true) => {
 document.addEventListener("click", e => {
   const n = e.target.closest("[data-nav]");
   if(n){ e.preventDefault(); const dest = n.dataset.nav;
-    if(["dashboard","modules","learn","tests","progress","updates","settings"].includes(dest)) showView(dest); }
+    if(["dashboard","modules","learn","tests","progress","updates","settings","admin"].includes(dest)) showView(dest); }
 });
 
 /* ---------- auth ---------- */
@@ -834,8 +834,14 @@ async function signIn(provider){
       const auth = firebase.auth();
       const prov = provider==="google" ? new firebase.auth.GoogleAuthProvider() : new firebase.auth.GithubAuthProvider();
       const cred = await auth.signInWithPopup(prov);
+      window.__SATASC_GHL = (cred.additionalUserInfo && cred.additionalUserInfo.username) || "";
       setUser(cred.user.displayName || "Student", cred.user.email || cred.user.uid, provider);
-    }catch(err){ toast("Sign-in failed or was cancelled: " + esc(err.message||err), 5000); }
+    }catch(err){
+      // Same email registered under a different provider → sign in with that
+      // provider, then link the pending credential so both work from now on.
+      if(window.SATASC_linkConflict){ try{ if(await window.SATASC_linkConflict(err)) return; }catch(e2){ console.warn("link flow:", e2); } }
+      toast("Sign-in failed or was cancelled: " + esc(err.message||err), 5000);
+    }
     return;
   }
   // on-device account (no password — just a name/email so progress can be labelled & exported)
@@ -872,10 +878,13 @@ async function setUser(name, email, provider){
     await loadSlot();
   }
   state.user = { name, email, provider,
+    ghLogin: window.__SATASC_GHL || "",
     since: (state.user && state.user.since) ? state.user.since : new Date().toISOString().slice(0,10) };
+  window.__SATASC_GHL = "";
   save(); enterApp();
   toast("Welcome, <b>" + esc(name) + "</b>! Your account is ready.");
 }
+window.SATASC_setUser = setUser;   // used by the credential-link flow (feature_admin)
 function enterApp(){
   $("#view-auth").classList.remove("on");
   $("#apphead").style.display = ""; $("#appmain").style.display = ""; $("#appfoot").style.display = "";
@@ -2881,6 +2890,502 @@ window.renderSettings = function(){
 
 /* ---------- expose test hooks ---------- */
 window.__TIER_TEST = { dailyQuestion, dueCards, predictor, badges, openReviewSession };
+})();
+
+</script>
+<script>
+/* ============ SAT Ascent — admin + credential-link module ============
+   1. Fixes "account-exists-with-different-credential": signs in with the
+      provider the email is already registered under, then links the pending
+      GitHub/Google credential so both providers work from then on.
+   2. Admin recognition: the repo owner (GitHub login) or CFG.adminEmail.
+   3. Admin panel: overview/health, users & traffic (GitHub traffic API via
+      the admin's own PAT, stored only in their sealed local store), and
+      controls that publish data/app-config-public.json to the repository
+      (announcement banner + feature toggles that every client picks up). */
+(function(){
+"use strict";
+if (window.__SATASC_ADMIN__) return;
+window.__SATASC_ADMIN__ = true;
+
+const $ = s => document.querySelector(s);
+const state = window.APP.state, save = window.APP.save;
+const esc = window.APP.esc || (s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])));
+const CFG = window.SATPREP_CONFIG;
+
+/* repo identity — derived from the Pages URL, overridable for local testing */
+let OWNER = "svesgp", REPO = "SAT";
+try{
+  const h = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
+  const seg = location.pathname.split("/").filter(Boolean)[0];
+  if(h) OWNER = h[1];
+  if(seg && location.hostname.endsWith(".github.io")) REPO = seg;
+  if(location.hostname === "localhost" || location.hostname === "127.0.0.1"){ /* keep defaults */ }
+}catch(e){}
+const API = "https://api.github.com";
+const PUB_PATH = "data/app-config-public.json";
+const DEFAULT_PUB = { updated:"", announcement:{ on:false, level:"info", text:"" },
+                      maintenance:false, features:{ ai:true, updates:true } };
+
+/* ---------- styles ---------- */
+const st = document.createElement("style");
+st.textContent = `
+#satasc-banner{display:none;position:relative;z-index:60;padding:10px 16px;font-size:.9rem;text-align:center}
+#satasc-banner.info{background:#1e3a5f;color:#dbeafe}
+#satasc-banner.warn{background:#4d3a12;color:#fde68a}
+#satasc-banner.bad{background:#4c1d1d;color:#fecaca}
+#satasc-banner.maint{background:#3b0764;color:#e9d5ff;font-weight:700}
+#satasc-banner button{background:none;border:1px solid currentColor;border-radius:8px;color:inherit;padding:2px 10px;cursor:pointer;margin-left:10px}
+.admtabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.admtab{padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card2);color:var(--muted);cursor:pointer;font-weight:700;font-size:.88rem}
+.admtab.on{color:var(--text);border-color:var(--accent);background:var(--card)}
+.admtable{width:100%;border-collapse:collapse;font-size:.88rem}
+.admtable td,.admtable th{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.admtable th{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}
+.admkv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:.92rem}
+.admkv .k{color:var(--muted)}
+.admsvg text{fill:var(--faint)}
+#nav-admin{display:none}
+body.is-admin #nav-admin{display:inline}
+.pat-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.gate{max-width:520px;margin:40px auto;text-align:center}
+body.no-ai #ai-fab{display:none!important}`;
+document.head.appendChild(st);
+
+/* ---------- helpers ---------- */
+async function ghAPI(path, token){
+  const headers = { Accept: "application/vnd.github+json" };
+  if(token) headers.Authorization = "Bearer " + token;
+  const r = await fetch(API + path, { headers });
+  if(!r.ok) throw new Error("GitHub API " + r.status + (r.status===401?" (bad token)":r.status===403?" (token lacks permission)":r.status===404?" (not found)":""));
+  return r.json();
+}
+const isAdmin = () => {
+  const u = state.user; if(!u) return false;
+  if(u.ghLogin && u.ghLogin.toLowerCase() === OWNER.toLowerCase()) return true;
+  if(u.email && CFG.adminEmail && String(u.email).toLowerCase() === CFG.adminEmail.toLowerCase()) return true;
+  return false;
+};
+const adminWhy = () => {
+  const u = state.user;
+  if(u && u.ghLogin && u.ghLogin.toLowerCase() === OWNER.toLowerCase()) return `GitHub login <b>${esc(u.ghLogin)}</b> is the repository owner`;
+  if(u && u.email && CFG.adminEmail && String(u.email).toLowerCase() === CFG.adminEmail.toLowerCase()) return "email matches the configured ADMIN_EMAIL";
+  return "not matched";
+};
+const pat = () => (state.settings && state.settings.adminPat) || "";
+
+/* ============================================================
+   PUBLIC CONFIG — banner + feature toggles for every visitor
+   ============================================================ */
+async function fetchPublicConfig(){
+  try{
+    const r = await fetch(PUB_PATH + "?t=" + Date.now());
+    if(!r.ok) return null;
+    const j = await r.json();
+    return j && typeof j === "object" ? j : null;
+  }catch(e){ return null; }
+}
+function bannerLevel(cfg){
+  if(cfg.maintenance) return "maint";
+  const a = cfg.announcement;
+  if(a && a.on && a.text) return ["info","warn","bad"].includes(a.level) ? a.level : "info";
+  return null;
+}
+function applyPublicConfig(cfg){
+  window.__SATASC_PUBCFG = cfg || null;
+  const c = cfg || DEFAULT_PUB;
+  let b = document.getElementById("satasc-banner");
+  if(!b){ b = document.createElement("div"); b.id = "satasc-banner"; document.body.insertBefore(b, document.body.firstChild); }
+  const lvl = bannerLevel(c);
+  const dismissKey = "satasc-dismiss-" + ((c.announcement && c.announcement.text || "") + (c.updated||"")).length + "-" + (c.updated||"");
+  if(lvl && !(sessionStorage.getItem(dismissKey) && lvl !== "maint")){
+    b.className = lvl;
+    const txt = lvl === "maint"
+      ? "🛠 " + ((c.announcement && c.announcement.text) ? esc(c.announcement.text) : "The site is in maintenance mode — tests still work offline, but some services may be unavailable.")
+      : (lvl === "warn" ? "⚠️ " : lvl === "bad" ? "🚨 " : "📢 ") + esc(c.announcement.text);
+    b.innerHTML = txt + (lvl === "maint" ? "" : `<button onclick="this.parentNode.style.display='none';sessionStorage.setItem('${dismissKey}','1')">Dismiss</button>`);
+    b.style.display = "";
+  } else { b.style.display = "none"; }
+  // feature kill-switches
+  const ai = !(c.features && c.features.ai === false);
+  const up = !(c.features && c.features.updates === false);
+  document.body.classList.toggle("no-ai", !ai);
+  document.querySelectorAll('#navlinks a[data-nav="updates"]').forEach(a => a.style.display = up ? "" : "none");
+  if(!window.__SATASC_AI_GATED && window.AI_TUTOR){
+    window.__SATASC_AI_GATED = true;
+    ["open","askAboutQuestion","general"].forEach(k => {
+      if(typeof window.AI_TUTOR[k] !== "function") return;
+      const orig = window.AI_TUTOR[k].bind(window.AI_TUTOR);
+      window.AI_TUTOR[k] = function(){
+        const p = window.__SATASC_PUBCFG;
+        if(p && p.features && p.features.ai === false){ toast("The AI tutor is temporarily disabled by the site admin."); return; }
+        return orig.apply(null, arguments);
+      };
+    });
+  }
+  if(!up && (window.currentView === "updates" || document.getElementById("view-updates")?.classList.contains("on"))) showView("dashboard");
+}
+async function refreshPublicConfig(){ applyPublicConfig(await fetchPublicConfig()); }
+refreshPublicConfig();
+setInterval(refreshPublicConfig, 10 * 60 * 1000);   // every 10 minutes
+
+/* ============================================================
+   CREDENTIAL-LINK FLOW (auth/account-exists-with-different-credential)
+   ============================================================ */
+function linkDoneMsg(name, linked){
+  toast("Welcome back, <b>" + esc(name) + "</b>!" + (linked ? " Your GitHub sign-in is now linked to this account — next time it works directly." : ""), 6000);
+}
+window.SATASC_linkConflict = async function(err){
+  if(!err || err.code !== "auth/account-exists-with-different-credential") return false;
+  if(!window.firebase) return false;
+  const auth = firebase.auth();
+  const email = (err.customData && err.customData.email) || err.email || "";
+  let methods = [];
+  try{ methods = await auth.fetchSignInMethodsForEmail(email); }catch(e){ methods = []; }
+  const pending = err.credential || null;
+  const gh = pending && pending.providerId === "github.com";
+  // the pending OAuth credential carries the GitHub access token — use it to
+  // recover the login name so admin recognition works on the linked session too
+  const ghLoginFromCred = async () => {
+    if(!pending || !pending.accessToken) return;
+    try{
+      const r = await fetch("https://api.github.com/user",
+        { headers: { Authorization: "Bearer " + pending.accessToken, Accept: "application/vnd.github+json" } });
+      if(r.ok){ const j = await r.json(); if(j && j.login) window.__SATASC_GHL = j.login; }
+    }catch(e){ /* non-fatal */ }
+  };
+
+  const useGoogle = async () => {
+    const r2 = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    let linked = false;
+    if(pending){
+      try{ await r2.user.linkWithCredential(pending); linked = true; }
+      catch(e){ if(e.code !== "auth/credential-already-in-use") console.warn(e); }
+    }
+    await ghLoginFromCred();
+    if(!window.__SATASC_GHL) window.__SATASC_GHL = "";
+    window.SATASC_setUser(r2.user.displayName || "Student", r2.user.email || r2.user.uid, "google");
+    linkDoneMsg(r2.user.displayName || "Student", linked);
+    return true;
+  };
+  const usePassword = () => new Promise(res => {
+    window.openModal(`<h3 style="margin-bottom:6px">Link your GitHub sign-in</h3>
+      <p class="small muted"><b>${esc(email)}</b> already has an email+password account here. Enter that password once — your GitHub sign-in will be linked to it permanently.</p>
+      <div class="field"><input id="lk-pw" type="password" placeholder="Existing password"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="lk-go">Sign in &amp; link</button>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      </div>`);
+    $("#lk-go").onclick = async () => {
+      const pw = $("#lk-pw").value;
+      if(!pw){ toast("Enter your password."); return; }
+      try{
+        const r2 = await auth.signInWithEmailAndPassword(email, pw);
+        let linked = false;
+        if(pending){ try{ await r2.user.linkWithCredential(pending); linked = true; }catch(e){ if(e.code !== "auth/credential-already-in-use") console.warn(e); } }
+        await ghLoginFromCred();
+        window.__SATASC_GHL = window.__SATASC_GHL || "";
+        window.closeModal();
+        window.SATASC_setUser(r2.user.displayName || email.split("@")[0], email, "device");
+        linkDoneMsg(r2.user.displayName || "Student", linked);
+        res(true);
+      }catch(e){ toast("Password sign-in failed: " + esc(e.message||e), 5000); }
+    };
+  });
+
+  if(methods.includes("google.com")){
+    window.openModal(`<h3 style="margin-bottom:6px">One quick step</h3>
+      <p class="small muted"><b>${esc(email)}</b> is already registered with <b>Google sign-in</b>, so Firebase blocks a second first-time sign-in with GitHub for the same address. Confirm the Google popup, and this app will <b>permanently link GitHub</b> to that account — after that, GitHub sign-in works directly.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="lk-gg">Continue with Google &amp; link GitHub</button>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      </div>`);
+    $("#lk-gg").onclick = async () => { window.closeModal(); try{ await useGoogle(); }catch(e){ toast("Google step failed or was cancelled: " + esc(e.message||e), 5000); } };
+    return true;
+  }
+  if(methods.includes("password")){ await usePassword(); return true; }
+  window.openModal(`<h3 style="margin-bottom:6px">Sign-in needs one extra step</h3>
+    <p class="small muted">The address <b>${esc(email)}</b> already belongs to an account created with
+    <b>${esc(methods.length ? methods.join(", ") : "another sign-in method")}</b>. Sign in that way once; this app then links your ${gh ? "GitHub" : "new"} sign-in to it automatically, so both work from now on. (Firebase requires this confirmation to protect the account.)</p>
+    <div class="row" style="margin-top:12px"><button class="btn primary" onclick="closeModal()">Got it</button></div>`);
+  return true;
+};
+
+/* ============================================================
+   ADMIN VIEW
+   ============================================================ */
+function ensureAdminView(){
+  if(document.getElementById("view-admin")) return;
+  const sec = document.createElement("section");
+  sec.id = "view-admin"; sec.className = "view";
+  sec.innerHTML = `<div class="shell" id="admin-body"></div>`;
+  const anchor = document.getElementById("view-settings");
+  anchor.parentNode.insertBefore(sec, anchor);
+  const nav = document.getElementById("navlinks");
+  if(nav && !document.getElementById("nav-admin")){
+    nav.insertAdjacentHTML("beforeend", `<a data-nav="admin" id="nav-admin">🛡 Admin</a>`);
+  }
+}
+function syncAdminChrome(){
+  ensureAdminView();
+  document.body.classList.toggle("is-admin", isAdmin());
+}
+const _sv3 = window.showView;
+window.showView = function(name){
+  const p = window.__SATASC_PUBCFG;
+  if(name === "updates" && p && p.features && p.features.updates === false){
+    toast("The news feed is temporarily disabled by the site admin.");
+    return _sv3.call(this, "dashboard");
+  }
+  const r = _sv3.apply(this, arguments);
+  if(name === "admin"){ try{ renderAdmin(); }catch(e){ console.error("admin:", e); } }
+  return r;
+};
+
+let ADM = { tab: "overview", pub: null, traffic: null, repo: null, runs: null };
+async function renderAdmin(){
+  const body = document.getElementById("admin-body");
+  if(!isAdmin()){
+    body.innerHTML = `<div class="gate card">
+      <div style="font-size:2rem">🛡</div>
+      <h2 class="sec">Admin access</h2>
+      <p class="small muted">This area is for the site owner. It unlocks automatically when you sign in with
+      the GitHub account that owns this repository (${esc(OWNER)}), or with an email matching the configured
+      admin address.</p>
+      <p class="tiny faint" style="margin-top:10px">Signed in as ${esc((state.user&&state.user.email)||"—")} ·
+      GitHub login: ${esc((state.user&&state.user.ghLogin)||"—")} · match: ${adminWhy()}</p></div>`;
+    return;
+  }
+  ADM.pub = await fetchPublicConfig();
+  body.innerHTML = `
+    <h2 class="sec">🛡 Admin console</h2>
+    <p class="small muted" style="margin-bottom:14px">Owner controls for <b>${esc(OWNER)}/${esc(REPO)}</b> · access via ${adminWhy()}</p>
+    <div class="admtabs">
+      <span class="admtab ${ADM.tab==="overview"?"on":""}" onclick="window.__admTab('overview')">📊 Overview</span>
+      <span class="admtab ${ADM.tab==="traffic"?"on":""}" onclick="window.__admTab('traffic')">👥 Users &amp; stats</span>
+      <span class="admtab ${ADM.tab==="controls"?"on":""}" onclick="window.__admTab('controls')">🎛 Site controls</span>
+    </div>
+    <div id="adm-tab"></div>`;
+  if(ADM.tab === "overview") renderOverview();
+  else if(ADM.tab === "traffic") renderUsers();
+  else renderControls();
+}
+window.__admTab = t => { ADM.tab = t; renderAdmin(); };
+
+/* ---------- tab 1: overview ---------- */
+async function renderOverview(){
+  const el = document.getElementById("adm-tab");
+  el.innerHTML = `<div class="card" style="margin-bottom:14px"><p class="small muted">Loading repository data…</p></div>`;
+  const bank = (window.MODULES || []).map(m => {
+    let n = 0; Object.values(m.pools || {}).forEach(p => n += (p && p.length) || 0);
+    const extra = (window.MODULE_EXTRA && window.MODULE_EXTRA[m.id]) ? window.MODULE_EXTRA[m.id].length : 0;
+    return `<tr><td>${esc(m.name || m.id)}</td><td>${n}</td><td>${extra}</td></tr>`;
+  }).join("");
+  let cfgRows = "";
+  try{
+    const [repo, runs, feed] = await Promise.all([
+      ghAPI(`/repos/${OWNER}/${REPO}`).catch(e => ({ err: String(e.message) })),
+      ghAPI(`/repos/${OWNER}/${REPO}/actions/runs?per_page=6`).catch(e => ({ err: String(e.message) })),
+      fetch("data/update-log.json?t=" + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null)
+    ]);
+    ADM.repo = repo.err ? null : repo; ADM.runs = runs.err ? null : runs;
+    const r = ADM.repo;
+    const runList = ADM.runs ? ADM.runs.workflow_runs.slice(0, 5).map(w =>
+      `<tr><td>${esc(w.name)}</td><td>${esc((w.created_at||"").slice(0,16).replace("T"," "))}</td>
+        <td>${w.status === "completed" ? (w.conclusion === "success" ? '<span class="chip good">success</span>' : `<span class="chip bad">${esc(w.conclusion)}</span>`) : `<span class="chip warn">${esc(w.status)}</span>`}</td></tr>`).join("")
+      : `<tr><td colspan=3 class="small muted">Workflow history unavailable (GitHub API rate limit?) — try again in a few minutes.</td></tr>`;
+    const feedUpd = feed && feed.updated ? feed.updated.slice(0, 16).replace("T", " ") : "—";
+    cfgRows = `<div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:10px">Repository &amp; deploys</h3>
+      ${r ? `<div class="admkv">
+        <span class="k">Visibility</span><span>${r.private ? "private" : "public"} · ⭐ ${r.stargazers_count} · ⑂ ${r.forks_count} · issues ${r.open_issues_count}</span>
+        <span class="k">Last push</span><span>${esc((r.pushed_at||"").slice(0,16).replace("T"," "))}</span>
+        <span class="k">Branch</span><span>${esc(r.default_branch)}</span>
+        <span class="k">Scraper feed</span><span>updated ${esc(feedUpd)} UTC · ${feed ? feed.entries.length : "—"} entries</span>
+      </div>` : `<p class="small muted">Repository metadata unavailable right now (${esc(repo.err||"")}).</p>`}
+      <table class="admtable" style="margin-top:10px"><tr><th>Workflow</th><th>Started (UTC)</th><th>Status</th></tr>${runList}</table></div>`;
+  }catch(e){ cfgRows = `<div class="card" style="margin-bottom:14px"><p class="small muted">Repository data failed: ${esc(e.message)}</p></div>`; }
+  const cfg = window.SATPREP_CONFIG || {};
+  el.innerHTML = cfgRows + `
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:10px">Runtime configuration</h3>
+      <div class="admkv">
+        <span class="k">Firebase OAuth</span><span>${cfg.firebase && cfg.firebase.apiKey ? `enabled · project ${esc(cfg.firebase.projectId||"")}` : "not configured"}</span>
+        <span class="k">ADMIN_EMAIL</span><span>${cfg.adminEmail ? esc(cfg.adminEmail) : "not set — admin is detected by GitHub repository-owner login"} <span class="tiny faint">(set the ADMIN_EMAIL repository secret to also allow the email path)</span></span>
+        <span class="k">Seal key id</span><span>${esc(cfg.sealKeyId||"d1")}</span>
+        <span class="k">Public config channel</span><span>${ADM.pub ? `published ${esc((ADM.pub.updated||"").slice(0,16).replace("T"," ")) || "yes"}` : "not published yet (defaults active)"}</span>
+        <span class="k">AI tutor gate</span><span>${(window.__SATASC_PUBCFG && window.__SATASC_PUBCFG.features && window.__SATASC_PUBCFG.features.ai === false) ? "disabled for all visitors" : "enabled"}</span>
+      </div></div>
+    <div class="card"><h3 style="margin-bottom:10px">Question banks</h3>
+      <table class="admtable"><tr><th>Module</th><th>Bank items</th><th>Crawler extras</th></tr>${bank || '<tr><td colspan=3>—</td></tr>'}</table>
+      <p class="tiny faint" style="margin-top:8px">The twice-daily crawler appends new items to data/modules/extra.js; deploy copies everything in data/.</p></div>`;
+}
+
+/* ---------- tab 2: users & stats ---------- */
+function deviceProfiles(){
+  // parked sealed profiles on THIS device: keys are "satascent_v1.slot.<b64url email>"
+  const out = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      const m = k && k.match(/^satascent_v1\.slot\.([A-Za-z0-9_-]+)$/);
+      if(!m) continue;
+      let email = "";
+      try{
+        const b = m[1].replace(/-/g,"+").replace(/_/g,"/");
+        email = decodeURIComponent(escape(atob(b + "=".repeat((4 - b.length % 4) % 4))));
+      }catch(e){ email = "?"; }
+      out.push(email);
+    }
+  }catch(e){}
+  return out;
+}
+function trafficChart(days){
+  const W = 560, H = 150, bw = W/Math.max(1,days.length);
+  const max = Math.max(1, ...days.map(d => Math.max(d.views, d.uniques)));
+  const bars = days.map((d,i) => {
+    const hv = Math.max(2, d.views/max*(H-30)), hu = Math.max(2, d.uniques/max*(H-30));
+    return `<rect x="${i*bw+bw*0.15}" y="${H-18-hv}" width="${bw*0.42}" height="${hv}" rx="3" fill="#7c5cff"/>
+      <rect x="${i*bw+bw*0.60}" y="${H-18-hu}" width="${bw*0.25}" height="${hu}" rx="3" fill="#22d3ee"/>`;
+  }).join("");
+  const labels = days.map((d,i) => i % Math.ceil(days.length/7) === 0
+    ? `<text x="${i*bw+bw/2}" y="${H-4}" font-size="9" text-anchor="middle">${esc(d.date.slice(5))}</text>` : "").join("");
+  return `<svg class="admsvg" width="100%" viewBox="0 0 ${W} ${H}" style="min-width:420px">${bars}${labels}</svg>
+    <p class="tiny faint"><span style="color:#8f78ff">■</span> repo-page views &nbsp;<span style="color:#22d3ee">■</span> unique visitors to the repo · per day (UTC)</p>`;
+}
+async function renderUsers(){
+  const el = document.getElementById("adm-tab");
+  const token = pat();
+  const proj = (CFG.firebase && CFG.firebase.projectId) || "";
+  const profs = deviceProfiles();
+  const curEmail = (state.user && String(state.user.email||"").toLowerCase()) || "";
+  const profRows = profs.map(e => `<tr><td>${esc(e)}</td>${e.toLowerCase()===curEmail ? "<td><span class=\"chip good\">current</span></td>" : "<td><span class=\"chip\">parked</span></td>"}</tr>`).join("");
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:8px">Registered accounts</h3>
+      <p class="small muted">Every Google/GitHub sign-in creates an account in the Firebase project
+      ${proj ? `<code>${esc(proj)}</code>` : "(Firebase not configured)"}. The full list — emails, providers, sign-in dates — lives
+      <b>server-side only</b> (privacy by design; no browser can enumerate it):</p>
+      ${proj ? `<p style="margin-top:8px"><a class="btn sm primary" href="https://console.firebase.google.com/project/${esc(proj)}/authentication/users" target="_blank" rel="noopener">Open Firebase Console → Authentication</a></p>` : ""}
+      <div class="admkv" style="margin-top:10px">
+        <span class="k">Profiles on this device</span><span>${profs.length} (${esc(profs.join(", ") || "none besides the current one")})</span>
+        <span class="k">On-device accounts</span><span>progress never leaves the browser — they are invisible to any server, including this panel</span>
+      </div></div>
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:8px">Repository activity (GitHub)</h3>
+      <p class="small muted">GitHub counts visits to the <b>repository page on github.com</b> and repo clones over the last 14 days.
+      <b>Note: GitHub does not expose visitor analytics for the published site itself</b> (github.io) — for site-wide visitor counts
+      the project has a GA4 measurement id, readable in the Firebase console → Analytics.</p>
+      <div class="pat-row" style="margin-top:10px">
+        <input id="adm-pat" type="password" class="field" style="background:var(--card2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:10px 14px;font-family:inherit" placeholder="${token ? "token stored — paste a new one to replace" : "ghp_… / github_pat_…"}">
+        <button class="btn sm primary" id="adm-pat-save">${token ? "Replace token" : "Save token"}</button>
+        ${token ? `<button class="btn sm danger" id="adm-pat-forget">Forget token</button>` : ""}
+        <span class="tiny faint" id="adm-pat-status">${token ? "✓ token stored locally — sent only to api.github.com" : "no token yet — needed for repo stats and publishing"}</span>
+      </div></div>
+    <div id="adm-traffic-body">${token ? `<p class="small muted">Loading repository stats…</p>` : `<p class="small muted">Save a token above to load repository activity.</p>`}</div>`;
+  if(document.getElementById("adm-pat-save")) document.getElementById("adm-pat-save").onclick = async () => {
+    const v = document.getElementById("adm-pat").value.trim();
+    if(!v){ toast("Paste a token first."); return; }
+    state.settings = state.settings || {}; state.settings.adminPat = v; window.APP.save();
+    toast("Token stored in your sealed local profile.");
+    renderUsers();
+  };
+  if(document.getElementById("adm-pat-forget")) document.getElementById("adm-pat-forget").onclick = () => {
+    delete state.settings.adminPat; window.APP.save(); toast("Token removed from this device."); renderUsers();
+  };
+  if(profRows) document.getElementById("adm-tab").insertAdjacentHTML("beforeend",
+    `<div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:8px">Device profiles (this browser)</h3>
+      <table class="admtable"><tr><th>Email</th><th>State</th></tr>${profRows}</table></div>`);
+  if(!token) return;
+  const tb = document.getElementById("adm-traffic-body");
+  try{
+    const [views, paths, clones] = await Promise.all([
+      ghAPI(`/repos/${OWNER}/${REPO}/traffic/views`, token),
+      ghAPI(`/repos/${OWNER}/${REPO}/traffic/popular/paths`, token),
+      ghAPI(`/repos/${OWNER}/${REPO}/traffic/clones`, token).catch(() => null)
+    ]);
+    ADM.traffic = views;
+    const totV = views.views, totU = views.uniques;
+    const pathRows = paths.slice(0, 8).map(p =>
+      `<tr><td>${esc(p.path)}</td><td>${p.count}</td><td>${p.uniques}</td></tr>`).join("");
+    tb.innerHTML = `
+      <div class="card" style="margin-bottom:14px"><div class="spread"><h3>Repo page · last 14 days</h3>
+        <div class="row"><span class="chip good">👁 ${totV} views</span><span class="chip">👤 ${totU} unique</span>
+        ${clones ? `<span class="chip">⬇ ${clones.count} clones</span>` : ""}</div></div>
+        <div style="overflow-x:auto;margin-top:10px">${trafficChart(views.days || [])}</div></div>
+      <div class="card"><h3 style="margin-bottom:8px">Most visited repo paths</h3>
+        <table class="admtable"><tr><th>Path</th><th>Views</th><th>Uniques</th></tr>${pathRows || '<tr><td colspan=3 class="small muted">No repo-page traffic recorded yet.</td></tr>'}</table></div>`;
+  }catch(e){
+    tb.innerHTML = `<div class="card"><p class="small muted">⚠️ ${esc(e.message)}. Check that the token has access to <b>${esc(OWNER)}/${esc(REPO)}</b> and the needed scopes (classic: <code>repo</code>; fine-grained: Administration read + Contents read/write).</p></div>`;
+  }
+}
+
+/* ---------- tab 3: site controls ---------- */
+async function renderControls(){
+  const el = document.getElementById("adm-tab");
+  const cur = ADM.pub || DEFAULT_PUB;
+  const a = cur.announcement || {};
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:8px">Announcement banner</h3>
+      <p class="small muted">Shows to every visitor within ~10 minutes (fetches ${esc(PUB_PATH)} at load and periodically). Leave off for no banner.</p>
+      <textarea id="adm-ann" class="field" rows="2" style="width:100%;background:var(--card2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:10px 14px;font-family:inherit;margin-top:8px" placeholder="e.g. New: PWA offline mode is live 🎉">${esc(a.text || "")}</textarea>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <select id="adm-level" style="background:var(--card2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:8px 12px">
+          <option value="info" ${a.level==="info"?"selected":""}>Info (blue)</option>
+          <option value="warn" ${a.level==="warn"?"selected":""}>Warning (amber)</option>
+          <option value="bad" ${a.level==="bad"?"selected":""}>Critical (red)</option>
+        </select>
+        <label class="small muted" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="adm-ann-on" style="accent-color:var(--accent)" ${a.on?"checked":""}> Show banner</label>
+        <label class="small muted" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="adm-maint" style="accent-color:var(--accent)" ${cur.maintenance?"checked":""}> Maintenance mode</label>
+      </div></div>
+    <div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:8px">Features (all visitors)</h3>
+      <div class="row" style="flex-wrap:wrap">
+        <label class="small muted" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="adm-ft-ai" style="accent-color:var(--accent)" ${(cur.features&&cur.features.ai===false)?"":"checked"}> AI tutor</label>
+        <label class="small muted" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="adm-ft-up" style="accent-color:var(--accent)" ${(cur.features&&cur.features.updates===false)?"":"checked"}> News feed</label>
+      </div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Publish</h3>
+      <p class="small muted" id="adm-pub-note">Publishing commits ${esc(PUB_PATH)} to the repository — this triggers a Pages deploy, and the change is live a minute or two later. Requires the token from the “Users &amp; traffic” tab.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm primary" id="adm-publish">🚀 Publish configuration</button>
+        <button class="btn sm" id="adm-reset">↺ Reset to defaults</button>
+        <span class="tiny faint" id="adm-pub-status"></span>
+      </div></div>`;
+  const readForm = () => ({
+    updated: new Date().toISOString(),
+    announcement: { on: document.getElementById("adm-ann-on").checked, level: document.getElementById("adm-level").value, text: document.getElementById("adm-ann").value.trim() },
+    maintenance: document.getElementById("adm-maint").checked,
+    features: { ai: document.getElementById("adm-ft-ai").checked, updates: document.getElementById("adm-ft-up").checked }
+  });
+  const publish = async cfg => {
+    const token = pat();
+    if(!token){ toast("Save a PAT in the “Users & traffic” tab first."); window.__admTab("traffic"); return; }
+    const stEl = document.getElementById("adm-pub-status");
+    stEl.textContent = "publishing…";
+    try{
+      let sha = null;
+      try{ const cur = await ghAPI(`/repos/${OWNER}/${REPO}/contents/${PUB_PATH}`, token); sha = cur.sha; }catch(e){ /* 404 → new file */ }
+      const body = { message: "admin: update public site configuration", branch: "main",
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(cfg, null, 2)))), ...(sha ? { sha } : {}) };
+      const r = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${PUB_PATH}`,
+        { method: "PUT", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if(!r.ok) throw new Error("GitHub " + r.status + " — " + ((await r.json().catch(()=>({}))).message || ""));
+      stEl.textContent = "✓ published — deploy queued, live in ~1–2 min";
+      toast("Configuration published. The Pages deploy runs now; all visitors pick it up within ~10 minutes.");
+      applyPublicConfig(cfg);
+    }catch(e){ stEl.textContent = "⚠️ " + e.message; toast("Publish failed: " + esc(e.message), 6000); }
+  };
+  document.getElementById("adm-publish").onclick = () => publish(readForm());
+  document.getElementById("adm-reset").onclick = () => publish(JSON.parse(JSON.stringify(DEFAULT_PUB)));
+}
+
+/* ---------- boot hooks ---------- */
+const _enter = window.enterApp;
+window.enterApp = function(){
+  const r = _enter.apply(this, arguments);
+  try{ syncAdminChrome(); }catch(e){ console.error("admin chrome:", e); }
+  return r;
+};
+if(document.readyState !== "loading") syncAdminChrome();
+else document.addEventListener("DOMContentLoaded", syncAdminChrome);
+
+/* ---------- expose test hooks ---------- */
+window.__ADMIN_TEST = { isAdmin, refreshPublicConfig, applyPublicConfig, fetchPublicConfig, ghAPI, OWNER, REPO };
 })();
 
 </script>
