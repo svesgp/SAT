@@ -1,0 +1,13 @@
+{
+  "updated": "2026-11-22T02:54:51.174Z",
+  "announcement": {
+    "on": false,
+    "level": "info",
+    "text": ""
+  },
+  "maintenance": false,
+  "features": {
+    "ai": true,
+    "updates": true
+  }
+}
