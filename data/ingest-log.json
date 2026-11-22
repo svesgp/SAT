@@ -1,0 +1,16 @@
+{
+ "updated": "2026-11-22 04:55 UTC",
+ "sources": [
+  {
+   "name": "Example open MIT-licensed bank",
+   "url": "https://raw.githubusercontent.com/OWNER/REPO/main/questions.json",
+   "license": "mit",
+   "module": "sat",
+   "enabled": false,
+   "status": "skipped",
+   "kept": 0,
+   "dropped": 0,
+   "reason": "enabled: false"
+  }
+ ]
+}
