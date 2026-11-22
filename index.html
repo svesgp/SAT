@@ -3568,5 +3568,398 @@ window.__ADMIN_TEST = { isAdmin, refreshPublicConfig, applyPublicConfig, fetchPu
 })();
 
 </script>
+<script>
+/* ============ SAT Ascent — offline AI agent + tutor upgrade ============
+   1. Local intent parser: rule-based classification + weighted keyword
+      retrieval. Zero download, instant, unlimited — a tiny "model" that
+      runs in the page.
+   2. Internal SAT knowledge base: formulas, grammar conventions, scoring,
+      strategy, and site help — answers stay within SAT scope.
+   3. Question-bank retrieval: "quiz me" and domain drills pull REAL
+      questions from the site's own bank, with show-answer reveals.
+   4. Progress awareness: weakest-domain and accuracy recommendations from
+      the student's own stats.
+   5. The free cloud AI stays as fallback for deep dives the local layer
+      can't handle — so the tutor is effectively unlimited.
+   ==================================================================== */
+(function(){
+"use strict";
+const {$, $$, esc, state, save} = window.APP;
+if(window.__SATASC_AIAGENT__) return;
+window.__SATASC_AIAGENT__ = true;
+
+/* ---------- text helpers ---------- */
+const strip = s => String(s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+const norm  = s => strip(s).toLowerCase().replace(/[^a-z0-9'+\- ]/g," ").replace(/\s+/g," ").trim();
+const TOK   = s => norm(s).split(" ").filter(Boolean);
+const STOP  = new Set(["the","a","an","is","are","was","were","do","does","did","i","you","me","my","of","to","in","on","for","and","or","how","what","when","which","can","tell","about","please","explain","give","show","help","with","this","that","it","its","be","get","got","there","their","from","at","by","as","so","if","then","than","very","really","just","some","any","all"]);
+
+/* ---------- internal SAT knowledge base ----------
+   k: match keys (multi-word keys score higher) · t: title · b: html answer */
+const KB = [
+/* ===== MATH ===== */
+{t:"Linear equations & slope", k:["linear","slope","y = mx + b","mx b","y-intercept","x-intercept","gradient","rise over run","line","equation of a line","point-slope","parallel lines","perpendicular lines"],
+ b:`A line is <b>y = mx + b</b>: m is the slope, b is the y-intercept.<br><b>Slope from two points:</b> m = (y₂ − y₁) / (x₂ − x₁).<br><b>Parallel</b> lines share the same slope; <b>perpendicular</b> lines have slopes that multiply to −1 (m₁ · m₂ = −1).<br><b>Example:</b> through (1, 3) with slope 2 → y − 3 = 2(x − 1) → y = 2x + 1.`},
+{t:"Systems of equations", k:["system of equations","systems","simultaneous","substitution","elimination","no solution","infinitely many","two variables","solving for two"],
+ b:`Solve two equations together by <b>substitution</b> (isolate one variable, plug into the other) or <b>elimination</b> (add/subtract to cancel a variable).<br><b>Special cases:</b> same slope different intercept → no solution; identical equations → infinitely many. On the SAT these appear as word problems — define your variables first.`},
+{t:"Quadratic formula & discriminant", k:["quadratic formula","quadratic","discriminant","-b ±","b squared minus","roots of a quadratic","solve a quadratic"],
+ b:`For ax² + bx + c = 0: <b>x = (−b ± √(b² − 4ac)) / 2a</b>.<br>The <b>discriminant</b> b² − 4ac tells you the roots: positive → 2 real roots, zero → 1 repeated root, negative → no real roots.<br><b>Example:</b> x² − 5x + 6 = 0 → a=1, b=−5, c=6 → x = (5 ± √1)/2 → x = 3 or x = 2.`},
+{t:"Factoring & zero product", k:["factor","factoring","zero product","factorise","gcf","greatest common factor","difference of squares","trinomial"],
+ b:`Set the equation to 0, factor, then set each factor to 0.<br><b>Patterns:</b> difference of squares a² − b² = (a−b)(a+b); perfect square a² ± 2ab + b².<br><b>Example:</b> x² − 9 = 0 → (x−3)(x+3) = 0 → x = ±3. If (x−2)(x+5) = 0 then x = 2 or x = −5.`},
+{t:"Vertex & completing the square", k:["vertex","completing the square","complete the square","parabola","axis of symmetry","maximum value","minimum value","turning point"],
+ b:`For y = ax² + bx + c the <b>vertex</b> sits at x = −b/2a; plug that back in for the y-value. Parabolas open up when a &gt; 0 (minimum) and down when a &lt; 0 (maximum).<br><b>Completing the square:</b> x² + 6x + 5 = (x + 3)² − 4 — take half of b, square it, adjust the constant. Vertex form: y = a(x − h)² + k with vertex (h, k).`},
+{t:"Exponent rules", k:["exponent","exponents","power","powers","product rule","quotient rule","negative exponent","zero exponent","scientific notation"],
+ b:`<b>x^a · x^b = x^(a+b)</b> · <b>x^a / x^b = x^(a−b)</b> · <b>(x^a)^b = x^(ab)</b> · <b>x⁰ = 1</b> (x ≠ 0) · <b>x^(−n) = 1/x^n</b> · <b>x^(1/2) = √x</b>.<br><b>Example:</b> (2³)² = 2⁶ = 64; 5⁻² = 1/25. Scientific notation keeps one nonzero digit before the decimal: 3.4 × 10⁵.`},
+{t:"Radicals", k:["radical","square root","sqrt","cube root","simplify radical","rationalize","irrational"],
+ b:`Simplify by pulling perfect squares out: √72 = √(36·2) = 6√2. Adding roots needs the same radicand: 3√2 + 2√2 = 5√2, but √2 + √3 can't combine.<br>A <b>solution is extraneous</b> if it fails the original equation — always check radical equations by substituting back.`},
+{t:"Percent change & percentages", k:["percent","percentage","percent change","percent increase","percent decrease","discount","markup","interest","tip and tax"],
+ b:`<b>Percent change = (new − old)/old × 100</b>. Increase by p% → multiply by (1 + p/100); decrease → (1 − p/100).<br><b>Successive changes multiply</b>: +10% then −10% gives 1.1 × 0.9 = 0.99, a net −1% — not zero. "What percent of 40 is 6?" → 6/40 = 15%.`},
+{t:"Ratios, rates & proportions", k:["ratio","proportion","rate","unit rate","scale","directly proportional","inversely proportional","parts"],
+ b:`Set up two equal fractions and cross-multiply: a/b = c/d → ad = bc.<br><b>Direct variation:</b> y = kx (k constant). <b>Inverse:</b> y = k/x. <b>Unit rates</b> make comparisons easy — convert everything to "per one".<br><b>Part-to-part vs part-to-whole:</b> in a 3:2 mix, the first ingredient is 3/5 of the total, not 3/2.`},
+{t:"Averages: mean, median, mode, range", k:["mean","median","mode","average","range statistics","outlier","center of data"],
+ b:`<b>Mean</b> = sum ÷ count. <b>Median</b> = middle value when sorted (average the two middles if even). <b>Mode</b> = most frequent. <b>Range</b> = max − min.<br>One huge outlier drags the mean but barely moves the median — SAT questions love this. If every value increases by 5, the mean increases by 5; if every value doubles, the mean doubles.`},
+{t:"Spread & standard deviation", k:["standard deviation","spread","variation","consistency","data spread","marginal","two-way table","scatterplot","line of best fit"],
+ b:`<b>Standard deviation</b> measures how far values sit from the mean: larger = more spread out, smaller = more consistent. It does NOT change when every value shifts by the same amount.<br><b>Line of best fit</b>: interpolation (inside the data) is safe, extrapolation is risky. In a two-way table, use row or column totals to find percentages like "of the males, what fraction chose X".`},
+{t:"Probability", k:["probability","chance","likely","independent events","dependent","without replacement","complement","odds","dice","coin"],
+ b:`P(event) = favorable ÷ total. <b>Independent events multiply:</b> P(A and B) = P(A)·P(B) — two coins both heads = ½ × ½ = ¼. <b>Complement trick:</b> P(at least one) = 1 − P(none).<br>Without replacement the totals shrink: after drawing 1 red from 5 red + 4 blue, P(red again) = 4/8.`},
+{t:"Sequences", k:["sequence","arithmetic sequence","geometric sequence","pattern","nth term","common difference","common ratio","recursive"],
+ b:`<b>Arithmetic</b> (add d): aₙ = a₁ + (n−1)d. <b>Geometric</b> (multiply r): aₙ = a₁ · r^(n−1).<br><b>Example:</b> 3, 7, 11, … → d = 4 → a₁₀ = 3 + 9·4 = 39. If a sequence doubles each term it's geometric — check the ratio, not the difference.`},
+{t:"Circles: equation, radians, arc & sector", k:["circle","radius","diameter","circumference","radian","arc length","sector area","central angle","tangent to a circle","circle equation"],
+ b:`<b>Equation:</b> (x − h)² + (y − k)² = r² with center (h, k). Circumference = 2πr, area = πr².<br><b>Arc length</b> = rθ (θ in radians); <b>sector area</b> = ½r²θ. Radians → degrees: multiply by 180/π (π rad = 180°).<br>A tangent meets the radius at 90°.`},
+{t:"Triangles & Pythagorean theorem", k:["triangle","pythagorean","hypotenuse","right triangle","45-45-90","30-60-90","special right","triangle inequality","area of triangle"],
+ b:`<b>a² + b² = c²</b> for right triangles. Common triples: 3-4-5, 5-12-13, 8-15-17.<br><b>Special right triangles:</b> 45-45-90 sides x : x : x√2; 30-60-90 sides x : x√3 : 2x. Area = ½ · base · height (height may fall outside the triangle).<br>Angles sum to 180°; exterior angle = sum of the two remote interior angles.`},
+{t:"Similar triangles & trigonometry", k:["similar triangles","trigonometry","trig","sine","cosine","tangent","soh cah toa","sohcahtoa","angle of elevation","proportion sides"],
+ b:`<b>Similar</b> triangles have equal angles and proportional sides — set up matching ratios to find a missing length.<br><b>SOH-CAH-TOA:</b> sin = opposite/hypotenuse, cos = adjacent/hypotenuse, tan = opposite/adjacent.<br><b>Example:</b> a 6-ft person casts a 4-ft shadow while a pole casts a 10-ft shadow → pole = 6 · (10/4) = 15 ft.`},
+{t:"Area & perimeter formulas", k:["area","perimeter","area of a rectangle","area of a circle","trapezoid","parallelogram","composite area","shaded region"],
+ b:`Rectangle: A = lw · Triangle: A = ½bh · Circle: A = πr², C = 2πr · Parallelogram: A = bh · Trapezoid: A = ½(b₁ + b₂)h.<br><b>Shaded region</b> = big shape − small shape. On the SAT the reference sheet is available in Bluebook — but knowing these saves time.`},
+{t:"Volume formulas", k:["volume","cylinder","cone","sphere","prism","pyramid","capacity","cubic"],
+ b:`Cylinder: V = πr²h · Cone: V = ⅓πr²h · Sphere: V = (4/3)πr³ · Prism/box: V = lwh.<br>Scaling: if lengths scale by k, volume scales by k³ (a box with double edges holds 8× as much). Units: answers in cubic units.`},
+{t:"Functions: notation, domain, transformations", k:["function","domain","range","f of x","composition","f(g(x))","transformation","shift","vertex form graph","undefined","input output"],
+ b:`A function assigns each input exactly one output. <b>Domain</b> = allowed inputs (no ÷ by 0, no √ of negatives); <b>range</b> = possible outputs.<br><b>Composition:</b> f(g(2)) means evaluate g(2) first, then feed it into f.<br><b>Transforms of y = f(x):</b> f(x) + k shifts up, f(x + h) shifts LEFT, a·f(x) stretches vertically, f(−x) mirrors across the y-axis.`},
+{t:"Exponential growth & decay", k:["exponential","growth","decay","half-life","doubling","compound","population grows","bacteria","radioactive","percent per year"],
+ b:`<b>y = a(1 + r)^t</b> grows, <b>y = a(1 − r)^t</b> decays (r as a decimal). Multiplicative patterns — each step multiplies by the same factor.<br><b>Example:</b> $200 at 5% per year → 200(1.05)ⁿ. Exponential beats linear eventually: 2ⁿ vs 100n + 50 — the doubling curve overtakes around n = 8.`},
+{t:"Inequalities", k:["inequality","inequalities","greater than","less than","number line","flip the sign","system of inequalities","shade"],
+ b:`Solve like equations, but <b>flip the sign when multiplying or dividing by a negative</b>: −2x &gt; 6 → x &lt; −3.<br>Graph: open circle for &lt; &gt;, closed for ≤ ≥. Systems of inequalities shade the overlap region. Word problems: "at least" → ≥, "no more than" → ≤.`},
+{t:"Absolute value", k:["absolute value","abs","distance from zero","two cases","absolute value equation","absolute value inequality"],
+ b:`|x| = distance from zero, so |x| = 7 → x = 7 or x = −7. |2x − 1| = 5 → 2x − 1 = 5 (x = 3) or 2x − 1 = −5 (x = −2).<br><b>Inequalities:</b> |x| &lt; 5 → −5 &lt; x &lt; 5; |x| &gt; 5 → x &lt; −5 or x &gt; 5 ("and" for less-than, "or" for greater-than).`},
+{t:"Isolating variables (literal equations)", k:["literal equation","isolating","solve for","in terms of","rearrange","formula manipulation","express in terms"],
+ b:`To express one variable in terms of others, treat the others like numbers and undo operations in reverse order.<br><b>Example:</b> A = ½h(b₁ + b₂), solve for h → h = 2A/(b₁ + b₂). Keep fractions factored — SAT answers show factored forms.`},
+{t:"Polynomials & operations", k:["polynomial","foil","expand","binomial","degree","leading coefficient","subtract polynomials","multiply expressions","remainder theorem"],
+ b:`Multiply every term by every term: (x + 3)(x − 2) = x² + x − 6. <b>Degree</b> = highest exponent; the leading coefficient drives end behavior.<br>When subtracting, <b>distribute the minus</b>: (3x² − x) − (x² − 4x) = 2x² + 3x. Match coefficients when two polynomials are equal for all x.`},
+{t:"Complex numbers", k:["complex number","imaginary","i squared","i^2","imaginary unit","complex solution"],
+ b:`<b>i² = −1</b>, so i = √(−1). Powers cycle: i¹ = i, i² = −1, i³ = −i, i⁴ = 1.<br><b>Example:</b> (3 + 2i)(3 − 2i) = 9 − (2i)² = 9 + 4 = 13. Add complex numbers by combining like parts: (2 + 3i) + (1 − i) = 3 + 2i.`},
+/* ===== READING & WRITING ===== */
+{t:"Central ideas & details", k:["central idea","main idea","main point","detail question","summary","best summary","overarching","theme","primary purpose"],
+ b:`The <b>central idea</b> is what the passage claims overall — usually stated or implied in the opening and closing sentences. Wrong choices are often <b>true but too narrow</b> (one paragraph only) or <b>too broad</b>.<br>For "best summary" questions, check each choice against the whole passage: the right one covers every paragraph in order and skips minor asides.`},
+{t:"Purpose, structure & claims", k:["purpose","text structure","claim","counterclaim","reasoning","argument","rhetorical","why does the author","function of"],
+ b:`"<b>Why does the author mention X?</b>" — answer with the job the sentence does locally (support a claim, introduce a contrast, define a term), not with its topic.<br>Track the <b>claim → reasoning → evidence</b> chain. A counterclaim is acknowledged only to be rebutted; if a sentence begins "Granted…" or "Admittedly…", expect a "however" soon after.`},
+{t:"Command of evidence (textual)", k:["command of evidence","evidence","which quote","best supports","textual evidence","support the claim"],
+ b:`Treat evidence questions as <b>checkpoint pairs</b>: first answer the previous question, then test each quote — does it directly prove THAT answer? The right quote contains the specific claim's language; quotes that are on-topic but prove something slightly different are traps.<br>Underline the sentence that would convince a skeptic, not merely related sentences.`},
+{t:"Quantitative evidence & graphs", k:["graph","table","chart","quantitative","data interpretation","percent from graph","figure","infographic","trend"],
+ b:`When a question pairs text with a graph/table: read the <b>axis labels and units first</b>, then match the claim to the numbers. Wrong choices usually cite correct-looking numbers that support a DIFFERENT claim, flip a trend, or swap percentages with counts.<br>If the text says "most students" check whether the graph shows a majority, not merely the largest group.`},
+{t:"Words in context & vocabulary", k:["word in context","vocabulary","what does the word","closest in meaning","synonym","connotation","tone of a word","vocab","meaning of"],
+ b:`Never define from memory alone — <b>read the sentence's clues</b> (contrast words, examples, tone) and predict your own word first, then match the choices. "Closest in meaning" asks about meaning <b>as used in this passage</b>, not the dictionary's first entry.<br>Two choices can be synonyms; only one fits the sentence's connotation (e.g. <b>thrifty</b> vs <b>cheap</b>). See my built-in word list: ask "define &lt;word&gt;" for common SAT words.`},
+{t:"Transitions & connectives", k:["transition","however","therefore","moreover","nevertheless","in contrast","connective","conjunction transition","logical connector","nonetheless"],
+ b:`Transitions signal the <b>logic between two thoughts</b>: contrast (however, nevertheless, conversely), cause-effect (therefore, consequently, thus), addition (moreover, furthermore), example (for instance), sequence (subsequently).<br><b>Method:</b> cover the transition, read both clauses, decide the relationship yourself, then pick the matching connective. "However" and "moreover" both fit grammatically — only one fits the logic.`},
+{t:"Rhetorical synthesis (bullet notes)", k:["rhetorical synthesis","bullet points","notes question","which choice most effectively","combining notes","student wants"],
+ b:`Bullet-note questions: the goal is stated in the prompt ("the student wants to <b>emphasize X</b> and <b>accurately convey Y</b>"). Check each choice against <b>all</b> goals — most choices fail exactly one. Numbers, dates and names are the usual accuracy traps.<br>Also watch for invented details: if a bullet never says it, a choice asserting it is wrong.`},
+{t:"Subject–verb agreement", k:["subject verb agreement","subject-verb","agreement error","singular verb","plural verb"," intervening phrase","either or","neither nor"],
+ b:`The verb agrees with the true subject, not the nearest noun: "<i>The list of items <b>is</b> long</i>" (list is singular).<br>Ignore intervening prepositional phrases ("of items", "with the players"). <b>Either/or, neither/nor:</b> verb agrees with the nearer subject. Collective nouns (team, committee) are usually singular. Inverted sentences ("There <b>are</b> three reasons…") — find the subject after the verb.`},
+{t:"Pronoun clarity & antecedents", k:["pronoun","antecedent","it they","ambiguous pronoun","possessive pronoun","who whom","its their","pronoun agreement"],
+ b:`Every pronoun needs <b>one clear, matching antecedent</b>. If "it" could point to two nouns, the answer usually replaces the pronoun with the noun itself.<br><b>Agreement:</b> singular noun → it/its; plural → they/their. "Everyone", "each", "nobody" are singular. "<b>Who</b>" = subject, "<b>whom</b>" = object. Beware possessive traps: "its" = belonging to it; "it's" = it is.`},
+{t:"Verb tense & mood", k:["verb tense","tense","past perfect","had been","conditional","if clause","would have","mood","subjunctive","had will"],
+ b:`Match the tense to the timeline: past perfect ("<b>had</b> left") only for an action <b>before another past action</b>; simple past for everything else. Don't switch tense mid-sentence without a time shift.<br><b>Conditionals:</b> "If she <b>had studied</b>, she <b>would have passed</b>" (unreal past); "If she <b>studies</b>, she <b>will pass</b>" (real future). "Would" never sits in the "if" clause.`},
+{t:"Commas", k:["comma","commas","comma splice","appositive","oxford comma","introductory phrase","comma before which","restrictive clause"],
+ b:`Commas: after an <b>introductory phrase</b>; around <b>non-essential</b> appositives ("My brother, <i>a dentist</i>, …"); before <b>and/but/so</b> joining two complete sentences; between list items.<br><b>No comma</b> between subject and verb, or in restrictive clauses ("Students <b>who study</b> pass" — only those who study). A comma alone can't join two full sentences — that's a splice (see boundaries).`},
+{t:"Semicolons, colons & dashes", k:["semicolon","colon","dash","em dash","dashes","period vs semicolon","punctuation heavy","join sentences"],
+ b:`<b>Semicolon</b> joins two complete, closely related sentences (like a soft period) or separates complex list items. <b>Colon</b> follows a complete sentence and introduces a list, definition, or explanation — "She had one goal: to win." Both sides matter for semicolons and colons.<br><b>Dashes</b> work like commas around interruptions (non-essential info) or like a dramatic colon. If a choice has a colon where the first half isn't complete, it's wrong.`},
+{t:"Apostrophes & possessives", k:["apostrophe","possessive","plural possessive","its vs it's","whose","contraction","ownership punctuation"],
+ b:`Singular possessive: <b>student's</b>. Plural: <b>students'</b> (after the s). Irregular plural: <b>children's</b>.<br><b>its = belonging to it</b>, it's = it is; whose = belonging to who, who's = who is. On the SAT, if the sentence means "it is", you need the apostrophe. Possessives of hyphenated pairs go on the last word: "mother-in-law's".`},
+{t:"Modifiers & parallelism", k:["modifier","dangling modifier","misplaced","parallelism","parallel structure","not only but also","both and","either or lists","consistency of lists"],
+ b:`A <b>dangling modifier</b> describes the wrong subject: "Walking to school, the tree impressed me" — the tree wasn't walking. Fix by making the doer the main subject or attaching the modifier to it.<br><b>Parallelism:</b> list items share form — "reading, writing, and <b>to edit</b>" fails; use "editing". Correlatives must balance: "not only X but also Y" with X and Y in the same grammatical shape.`},
+{t:"Boundaries: fragments, run-ons, splices", k:["fragment","run-on","run on","comma splice","sentence boundary","independent clause","dependent clause","conjunction error","fused sentence"],
+ b:`Two full sentences need a <b>period, semicolon, or comma + FANBOYS</b> (for, and, nor, but, or, yet, so). A comma alone creates a <b>splice</b>; no punctuation is a <b>run-on</b>.<br>A <b>fragment</b> lacks a subject-verb core ("Because it rained." / "Which caused delays."). Test: can the clause stand alone? Dependent clauses starting with because/although/while cannot.`},
+{t:"Expression of ideas & concision", k:["concision","wordy","redundant","combine sentences","effective language","precision","add or delete sentence","relevance"],
+ b:`The grammatically correct choice is often <b>too wordy</b> — SAT rewards the shortest answer that keeps all meaning. Redundancies: "12 noon", "end result", "past history".<br>"<b>Should the writer add/delete this sentence?</b>" — judge by the paragraph's focus: relevant to its job → keep; a new tangent → delete.`},
+/* ===== STRUCTURE, SCORING, STRATEGY ===== */
+{t:"Digital SAT format", k:["format","how long","how many questions","sections","modules","adaptive","structure of the sat","digital sat","timing","bluebook","calculator policy"],
+ b:`The digital SAT has <b>2 sections</b>: Reading &amp; Writing (2 modules × 27 questions, 32 min each) and Math (2 modules × 22 questions, 35 min each) — about <b>2 hours 14 minutes</b> plus a short break.<br><b>Adaptive:</b> how you do on module 1 of each section sets the difficulty (and possible score range) of module 2. One question each, no grid-ins with separate bubbles — most math answers are multiple choice, ~20% are student-produced.`},
+{t:"How SAT scoring works", k:["scoring","score","1600","400","scaled score","raw score","adaptive scoring","what is a good score","average score","superscore"],
+ b:`Total <b>400–1600</b>; each section 200–800 in 10-point steps. There's <b>no penalty for wrong answers</b> — always guess. Raw points convert through the adaptive module difficulty to a scaled score.<br>Roughly: 1450+ is top 5%, 1200–1350 is solid for many state universities, 1500+ is competitive for the most selective schools. Scores arrive days after the test; superscoring combines your best section scores across dates (college-dependent).`},
+{t:"Pacing & time strategy", k:["pacing","time management","run out of time","how long per question","seconds per question","too slow","flag","skip questions","guessing strategy"],
+ b:`Budget roughly <b>70–75 seconds</b> per R&amp;W question and <b>90–95 seconds</b> per Math question. Module 1 targets: R&amp;W ~63s, Math ~86s — bank time for the harder module 2.<br><b>Flag &amp; move on</b> after ~1.5× your budget; the flagged question costs less than three lost ones. Since there's no guessing penalty, <b>fill in every question</b> before the module ends.`},
+{t:"Test-taking strategies", k:["strategy","strategies","elimination","backsolve","plug in","picking numbers","trap answers","traps","process of elimination","desmos","calculator tricks","test tips","answer wrong","got it wrong","got wrong","why wrong","wrong answer","trick question","tricky"],
+ b:`<b>Math:</b> backsolve from answer choices (start C), pick easy numbers for variables ("let x = 2"), and use <b>Desmos</b> — it's built into Bluebook and solves equations, inequalities and even regression visually.<br><b>R&amp;W:</b> predict before you peek — answer word-in-context and transition questions with your own word first. Eliminate choices that overstate ("always", "proves"), or drift from the passage's scope. Traps are usually: too extreme, half-true, or from a different part of the passage.<br><b>When you miss one:</b> classify it (concept gap, trap, or timing) — then drill that pattern. The site's <b>Review my misses</b> button does this automatically.`},
+{t:"Study plan & error log", k:["study plan","how to study","error log","review mistakes","mistake","mistakes","missed","miss a question","review my misses","improve my score","practice routine","how often","weeks before","cram","retake"],
+ b:`Highest-return routine: <b>1 full test every 1–2 weeks</b> (mimic real timing), then <b>review every miss the same day</b> — write why you missed it (concept, trap, or timing) in an error log, and drill that pattern until two clean reps.<br>Most gains come from your 2 weakest domains, not from re-practicing strengths. Use the site's <b>Review my misses</b> button after each test — it rebuilds a test from exactly those questions.`},
+/* ===== SITE HELP ===== */
+{t:"Using this site: tests & practice", k:["how does this site","how do i use","take a test","start a test","topic test","full test","review my misses","elite band","difficulty","practice on this site","site work","use this app"],
+ b:`<b>Tests</b> tab: full-length adaptive practice (28 questions per module like the real thing) plus <b>topic tests</b> on one domain and Elite-band drills once you're scoring well.<br>After any test, the results page shows every miss with explanations and a <b>🔁 Review my misses</b> button that builds a fresh test from those questions. Flag questions with the flag button to jump back within a module.`},
+{t:"Daily question & streak", k:["daily question","streak","day streak","how does the streak","keep the streak","daily practice"],
+ b:`The dashboard has a fresh <b>Daily question</b> every day — answer it to grow your 🔥 <b>day streak</b> (shown on the dashboard and in Progress). Missing a day resets the counter, but your <b>best streak</b> stays on record.<br>Streaks work because 10 focused minutes a day beats a 3-hour cram — it's spaced repetition for your weakest domains.`},
+{t:"Progress & statistics", k:["my stats","progress page","accuracy","statistics","estimated score","am i improving","dashboard numbers","what do the numbers mean","estimated total"],
+ b:`The <b>Progress</b> page tracks tests taken, estimated total score (from your last 3 full runs), overall accuracy, and per-domain accuracy bars.<br>Domain accuracy is the actionable number: anything under ~70% deserves a topic test this week. Estimates stabilize after 2–3 full tests — early ones swing wildly because the adaptive calibration is still learning you.`},
+{t:"Saving & backing up progress", k:["save","backup","export","github backup","folder backup","lose my progress","transfer progress","new device","download data","restore"],
+ b:`Progress auto-seals to this device. To keep it safe: <b>Settings → Save &amp; sync</b> offers a one-click download file, a <b>GitHub</b> backup (paste a fine-grained token with Contents read/write) and a local <b>folder</b> backup on Chromium browsers.<br>To move devices: export on the old one, then import the same file on the new one from the same card. Nothing is stored on any server — the backups are yours alone.`},
+{t:"Themes & appearance", k:["theme","themes","appearance","dark mode","light mode","change the look","game theme","neon","colors","custom look"],
+ b:`Click the <b>🎨 button</b> in the header (or Settings → Appearance) to switch among 8 looks: Midnight, Daylight, 🎮 <b>Neon Arcade</b> (animated game grid), 🌅 Synthwave, ⚡ Cyberpunk, 🧛 Dracula, ❄️ Nord, and 🍵 Matcha.<br>Your theme is saved with your profile and restored on your next sign-in.`},
+{t:"Your account & sign-in", k:["sign in","login","account","google","github","password","provider","how do i log","forgot password","sign out","delete my data"],
+ b:`Sign in with <b>Google</b>, <b>GitHub</b>, or a device account — all of them open the same page if the email matches: your streak, scores and settings follow you. If you first used Google, GitHub will link automatically the first time (one confirmation, then both work forever).<br>No password is stored here for OAuth accounts; sign-out is the power button in the header. Clearing browser storage removes the local device account.`},
+/* ===== MINI VOCAB (ask "define &lt;word&gt;") ===== */
+{t:"Common SAT vocabulary", k:["define","definition of","meaning of the word","vocabulary word","what does it mean"],
+ b:`Ask me like "<b>define ubiquitous</b>" — I keep a built-in list of high-value SAT words. Universal strategy: even for unknown words, use the sentence's contrast/example clues plus tone, then match. Guess from roots: <b>bene-</b> (good), <b>mal-</b> (bad), <b>circum-</b> (around), <b>super-</b> (above), <b>-ous</b> (full of), <b>-able</b> (capable of).`},
+];
+
+/* built-in mini-glossary for "define &lt;word&gt;" */
+const VOCAB = {
+  ubiquitous:"present or found everywhere", pernicious:"harmful in a gradual, subtle way",
+  constancy:"the quality of staying steady or unchanging", pragmatic:"practical rather than idealistic",
+  ambivalent:"having mixed or conflicting feelings", meticulous:"extremely careful and precise",
+  succinct:"expressed clearly in few words", dogmatic:"asserting opinions as if they were facts",
+  candid:"honest and direct", skeptical:"doubting; not easily convinced",
+  impartial:"treating all sides equally; unbiased", unprecedented:"never done or seen before",
+  conspicuous:"easy to notice; standing out", inevitable:"certain to happen; unavoidable",
+  detrimental:"causing harm or damage", beneficial:"producing good or helpful results",
+  ambiguous:"open to more than one interpretation", resilient:"able to recover quickly from difficulty",
+  superficial:"on the surface only; shallow", corroborate:"confirm or support with evidence",
+  undermine:"weaken gradually or secretly", advocate:"to publicly support or recommend",
+  empirical:"based on observation or experiment, not theory", hypothetical:"based on an imagined situation",
+  plausible:"seeming reasonable or believable", arbitrary:"based on chance or whim, not reason"
+};
+
+/* ---------- retrieval ---------- */
+function entryScore(toks, joined, e){
+  let s = 0;
+  for(const k of e.k){
+    if(k.includes(" ")){
+      if(joined.includes(k)) s += 6;
+      else if(k.split(" ").every(w => toks.includes(w))) s += 3;
+    } else {
+      for(const t of toks){
+        if(t === k) s += 3;
+        else if(t.length > 3 && k.length > 3 && (t.startsWith(k) || k.startsWith(t))) s += 1.5;
+      }
+    }
+  }
+  const tt = TOK(e.t).filter(w => !STOP.has(w));
+  for(const t of toks) if(tt.includes(t)) s += 1;
+  return s;
+}
+function retrieve(toks){
+  const joined = toks.join(" ");
+  return KB.map(e => ({ e, s: entryScore(toks, joined, e) }))
+           .filter(r => r.s > 0).sort((a,b) => b.s - a.s);
+}
+
+/* ---------- question bank pull ---------- */
+function matchDomains(low){
+  const D = window.DOMAINS || {};
+  const hits = Object.keys(D).filter(id => {
+    const nm = (D[id].name || "").toLowerCase();
+    return low.includes(nm) || nm.split(/[&/\s]+/).some(w => w.length > 4 && low.includes(w));
+  });
+  if(!hits.length){
+    if(/\bmath|algebra|equation/.test(low)) return Object.keys(D).filter(id => D[id].sec === "math");
+    if(/\breading|writing|english|grammar|vocab/.test(low)) return Object.keys(D).filter(id => D[id].sec !== "math");
+  }
+  return hits;
+}
+function bankPicks(low, n){
+  const pool = (window.allStatic ? window.allStatic() : []).filter(q => q && q.q && q.a != null && Array.isArray(q.ch) && q.ch.length === 4);
+  if(!pool.length) return null;
+  const doms = matchDomains(low);
+  let list = pool;
+  if(doms.length) list = pool.filter(q => doms.includes(q.d));
+  if(!list.length) list = pool;
+  const used = new Set(), picks = [];
+  const guard = list.length * 3 + 10;
+  while(picks.length < Math.min(n, 6) && used.size < list.length && guard > used.size * 3){
+    const q = list[Math.floor(Math.random() * list.length)];
+    if(used.has(q.id)) continue;
+    used.add(q.id);
+    picks.push(window.shufOpts ? window.shufOpts(q) : q);
+  }
+  return picks.length ? picks : null;
+}
+function qCard(q, i){
+  const dom = (window.DOMAINS[q.d] || {}).name || q.d;
+  const stem = window.safeHtml ? window.safeHtml(q.q) : esc(strip(q.q));
+  const pass = q.p ? (window.safeHtml ? window.safeHtml(q.p) : esc(strip(q.p))) : "";
+  const opts = q.ch.map((c,j) => `<div class="ag-opt"><span class="ol">${"ABCD"[j]}</span><span>${esc(String(c))}</span></div>`).join("");
+  const why = q.e ? esc(strip(q.e)).slice(0, 420) : "Work through the operation the stem asks for, then match your result to the choices.";
+  return `<div class="agq"><div class="ag-meta">🎯 ${esc(String(dom))} · ${esc(String(q.tier||"core"))}${i != null ? " · #" + (i+1) : ""}</div>` +
+    (pass ? `<div class="ag-pass">${pass}</div>` : "") +
+    `<div class="ag-stem">${stem}</div><div class="ag-opts">${opts}</div>` +
+    `<button class="btn sm ag-reveal" data-a="${"ABCD"[q.a]}">Show answer &amp; why</button>` +
+    `<div class="ag-ans" style="display:none">✅ <b>Correct: ${"ABCD"[q.a]}.</b> ${why}</div></div>`;
+}
+window.__agentReveal = null; // handled via delegation below
+
+/* ---------- progress awareness ---------- */
+function statsCard(){
+  const at = (state.progress && state.progress.attempts) || [];
+  const ds = (window.domainStats ? window.domainStats() : []).filter(x => x.seen >= 3 && x.pct != null);
+  const seen = ds.reduce((a,x)=>a+x.seen,0), ok = ds.reduce((a,x)=>a+x.correct,0);
+  const acc = seen ? Math.round(100*ok/seen) : null;
+  const weak = ds.length ? ds.slice().sort((a,b)=>a.pct-b.pct)[0] : null;
+  const domN = weak ? ((window.DOMAINS[weak.d]||{}).name || weak.d) : null;
+  return `<div class="agq"><div class="ag-meta">📊 Your numbers so far</div>
+    <p class="small">Tests taken: <b>${at.length}</b> · questions answered: <b>${seen}</b>${acc != null ? ` · overall accuracy: <b>${acc}%</b>` : ""} · 🔥 streak: <b>${window.streak ? window.streak() : 0}</b></p>` +
+    (weak ? `<p class="small muted">Weakest domain: <b>${esc(String(domN))}</b> (${weak.pct}%). That's your fastest route to points — <span class="ag-rel" data-ask="Give me a ${esc(String(domN))} question">practice one now →</span></p>`
+          : `<p class="small muted">Take one full test from the Tests tab and I can point you at your weakest domain.</p>`) +
+    `</div>`;
+}
+
+/* ---------- scope guard ---------- */
+const OFFTOPIC = /\b(weather|recipe|recipes|cooking|movie|movies|netflix|song|songs|lyrics|music charts|celebrit|football|soccer|basketball|nba|nfl|cricket|stocks?|cryptocurr|bitcoin|jokes?|poems?|translate|youtube|tiktok|instagram|who won|election|gossip|horoscope|anime|drama series|health advice|diagnos)/;
+
+/* ---------- the local agent ---------- */
+window.SAT_AGENT = {
+  version: "1.0",
+  answer(text){
+    const raw = strip(text);
+    if(!raw) return null;
+    const low = norm(text);
+    const toks = [...new Set(TOK(raw).filter(t => !STOP.has(t) || t.length > 3))];
+    if(!toks.length) toks.push(low);
+
+    /* greetings & niceties */
+    if(toks.length <= 3 && /^(hi|hello|hey|yo|sup|good morning|good afternoon|good evening|hiya)\b/.test(low)){
+      return { src:"kb", html:`Hey there! 👋 I'm your SAT tutor. I can <b>explain any formula or grammar rule</b>, <b>quiz you from the real question bank</b>, tell you <b>how scoring works</b>, and point you at <b>your weakest domain</b>. Try the chips below, or just ask.` };
+    }
+    if(/\b(thank|thanks|thx|tysm|appreciate)\b/.test(low) && toks.length <= 4){
+      return { src:"kb", html:`Anytime! 🎯 Small habit that pays: after every practice set, ask me <b>"what should I study next?"</b> and drill exactly that.` };
+    }
+
+    /* define <word> */
+    const defM = low.match(/(?:define|definition of|meaning of|what does)\s+"?([a-z][a-z-]{2,})"?/);
+    if(defM){
+      const w = defM[1];
+      if(VOCAB[w]){
+        return { src:"kb", html:`<b>${esc(w)}</b> — ${esc(VOCAB[w])}.<br><span class="tiny faint">On the real test, still read the sentence first: the passage's context can shade the meaning. Ask me for "words in context" strategy for the full method.</span>` };
+      }
+      return { src:"kb", html:`<b>${esc(w)}</b> isn't in my built-in glossary — but you don't need a dictionary on this test. Use the <b>words-in-context method</b>: cover the choices, read the sentence's clues (contrast words, examples, tone), predict your own simple word, then match. ${esc(w[0].toUpperCase()+w.slice(1))}-type words are usually tested this way. Root hints: <b>bene-/mal-</b> (good/bad), <b>circum-</b> (around), <b>super-</b> (above), <b>-ous</b> (full of).` };
+    }
+
+    /* quiz / practice request */
+    if(/\b(quiz me|quiz|test me|drill me|practice question|sample question|another question|more question|give me (a|\d+|one|two|three|four|five|six)?)\b/.test(low) && /\bquestion|problem|drill|quiz|practice\b/.test(low)){
+      const numM = low.match(/\b(\d+|one|two|three|four|five|six)\b/) || [,"1"];
+      const nMap = {one:1,two:2,three:3,four:4,five:5,six:6};
+      const n = Math.max(1, Math.min(6, /^\d+$/.test(numM[1]) ? +numM[1] : (nMap[numM[1]]||1)));
+      const picks = bankPicks(low, n);
+      if(picks){
+        return { src:"bank", html:`Here ${picks.length > 1 ? "are <b>" + picks.length + " fresh questions</b>" : "is a question"}${matchDomains(low).length ? " from the domain you asked for" : " from the practice bank"} — work them out, then reveal the answers:<br>` +
+          picks.map((q,i) => qCard(q, i)).join("<br>") };
+      }
+    }
+
+    /* what should I study next */
+    if(/\b(what should i study|what to study|which domain|weakest|weak domain|study next|what next|focus on|recommend|improve my)\b/.test(low)){
+      return { src:"kb", html: statsCard() };
+    }
+    /* how am I doing */
+    if(/\b(how am i doing|my (stats|progress|accuracy)|my score|estimated score|estimate)\b/.test(low)){
+      return { src:"kb", html: statsCard() };
+    }
+
+    /* knowledge-base retrieval (formulas, concepts, scoring, strategy, site) */
+    const formulaBoost = /\b(formula|equation for|rule for|how to (solve|simplify|factor|find)|when to use)\b/.test(low) ? 2 : 1;
+    const ranked = retrieve(toks).map(r => ({ e:r.e, s:r.s * formulaBoost }));
+    if(ranked.length && ranked[0].s >= 3){
+      const best = ranked[0].e;
+      const rel = ranked.slice(1, 3).filter(r => r.s >= 2).map(r =>
+        `<span class="ag-rel" data-ask="Explain ${esc(r.e.t)}">→ ${esc(r.e.t)}</span>`).join("");
+      return { src:"kb", html:`<b>${esc(best.t)}</b><br>${best.b}` + (rel ? `<div style="margin-top:8px">${rel}</div>` : "") };
+    }
+
+    /* scope guard — refuse non-SAT chat locally (saves cloud quota) */
+    if(OFFTOPIC.test(low)){
+      return { src:"scope", html:`I stay inside <b>SAT prep</b> 🎯 — formulas, grammar rules, reading strategy, scoring, study plans, and practice questions from your bank. Try me with something like "<b>explain the quadratic formula</b>", "<b>quiz me — 3 questions</b>", or attach any question on screen and ask what you missed.` };
+    }
+
+    return null;  /* hand off to the cloud tutor for deep dives */
+  }
+};
+
+/* ---------- chat UI wiring ---------- */
+const AG_CSS = `
+.agq{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--card2);margin-top:6px;text-align:left}
+.agq+.agq{margin-top:10px}
+.ag-meta{font-size:.68rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent2);margin-bottom:5px}
+.ag-pass{font-family:Georgia,serif;font-size:.85rem;max-height:130px;overflow:auto;color:var(--muted);border-left:3px solid var(--line);padding-left:8px;margin-bottom:7px}
+.ag-stem{font-size:.92rem;margin-bottom:8px}
+.ag-opt{display:flex;gap:8px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px;font-size:.85rem;align-items:flex-start;background:var(--card)}
+.ag-opt .ol{flex:0 0 auto;font-weight:800;color:var(--accent)}
+.ag-ans{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--card);border:1px solid var(--good);font-size:.86rem}
+.ai-src{font-size:.68rem;color:var(--faint);margin-top:6px}
+.ag-rel{display:inline-block;margin:4px 6px 0 0;padding:3px 11px;border:1px solid var(--line);border-radius:999px;font-size:.76rem;cursor:pointer;background:var(--card)}
+.ag-rel:hover{border-color:var(--accent);color:var(--accent)}
+`;
+(function(){
+  const st = document.createElement("style");
+  st.id = "ag-style"; st.textContent = AG_CSS;
+  document.head.appendChild(st);
+})();
+
+const SRC_NOTE = {
+  kb:    "📚 answered from the built-in SAT knowledge base — instant · offline · unlimited",
+  bank:  "📚 pulled live from your site's own practice bank",
+  scope: "🧭 the tutor stays inside SAT prep"
+};
+function botBubble(html, src){
+  const d = document.createElement("div");
+  d.className = "ai-b bot";
+  d.innerHTML = html + `<div class="ai-src">${SRC_NOTE[src] || ""}</div>`;
+  $("#ai-msgs").appendChild(d);
+  $("#ai-msgs").scrollTop = 1e9;
+  return d;
+}
+if(!window.__AG_DELEGATE__){
+  window.__AG_DELEGATE__ = true;
+  $("#ai-msgs").addEventListener("click", e => {
+    const rev = e.target.closest(".ag-reveal");
+    if(rev){
+      const box = rev.closest(".agq");
+      const ans = box && box.querySelector(".ag-ans");
+      if(ans){ ans.style.display = "block"; rev.remove(); $("#ai-msgs").scrollTop = 1e9; }
+      return;
+    }
+    const ask = e.target.closest("[data-ask]");
+    if(ask && ask.dataset.ask) window.AI_TUTOR.general(ask.dataset.ask);
+  });
+}
+
+/* intercept free-text chat: local agent first (unlimited), cloud on miss */
+const _general = window.AI_TUTOR.general.bind(window.AI_TUTOR);
+window.AI_TUTOR.general = function(text){
+  window.AI_TUTOR.open();
+  const hit = window.SAT_AGENT.answer(text);
+  if(hit){
+    const um = document.createElement("div");
+    um.className = "ai-b user";
+    um.textContent = String(text);
+    $("#ai-msgs").appendChild(um);
+    botBubble(hit.html, hit.src);
+    return;
+  }
+  return _general(text);   /* cloud fallback — SAT-scoped system prompt */
+};
+
+/* refreshed quick-action chips (local-first) */
+window.AI_CHIPS = ["Quadratic formula","How is the SAT scored?","Quiz me — 3 questions","What should I study next?","Semicolon vs colon","Define pragmatic"];
+(function(){
+  const box = document.getElementById("ai-chips");
+  if(!box) return;
+  box.innerHTML = window.AI_CHIPS.map(c => `<span class="ai-chip">${esc(c)}</span>`).join("");
+  $$("#ai-chips .ai-chip").forEach((el,i) => el.onclick = () => window.AI_TUTOR.general(window.AI_CHIPS[i]));
+})();
+
+/* header note: the tutor is now local-first */
+(function(){
+  const note = document.querySelector("#ai-panel .ai-head .tiny.faint");
+  if(note) note.textContent = "📚 offline tutor answers instantly & unlimited · 🤖 cloud AI joins for deep dives · can make mistakes";
+})();
+})();
+</script>
 </body>
 </html>
